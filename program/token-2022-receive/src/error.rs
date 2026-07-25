@@ -2,65 +2,60 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 use solana_program::program_error::ProgramError;
 use thiserror::Error;
 
+/// Discriminants are explicit and stable: they surface to clients as
+/// `ProgramError::Custom(n)` and are quoted in `docs/VERIFICATION.md`. Gaps at 0, 5, 12 and 16
+/// are retired variants; reuse them only if the meaning matches.
 #[derive(Clone, Debug, Eq, Error, PartialEq, IntoPrimitive, TryFromPrimitive)]
 #[repr(u32)]
 pub enum ReceiveTokenError {
-    #[error("Lamport balance below rent-exempt threshold")]
-    NotRentExempt = 0,
     #[error("Insufficient funds")]
-    InsufficientFunds,
+    InsufficientFunds = 1,
     #[error("Mint mismatch")]
-    MintMismatch,
+    MintMismatch = 2,
     #[error("Account frozen")]
-    AccountFrozen,
+    AccountFrozen = 3,
     #[error("Owner does not match")]
-    OwnerMismatch,
-    #[error("Fixed supply")]
-    FixedSupply,
+    OwnerMismatch = 4,
     #[error("Already in use")]
-    AlreadyInUse,
+    AlreadyInUse = 6,
     #[error("Invalid instruction data")]
-    InvalidInstruction,
+    InvalidInstruction = 7,
     #[error("Invalid account data")]
-    InvalidAccountData,
+    InvalidAccountData = 8,
     #[error("Decimals mismatch")]
-    MintDecimalsMismatch,
+    MintDecimalsMismatch = 9,
     #[error("Missing required receive-policy accounts")]
-    MissingPolicyAccounts,
+    MissingPolicyAccounts = 10,
     #[error("Receive policy rejected and guard shard is at capacity")]
-    GuardAtCapacity,
-    #[error("Transfer Hook coexistence forbidden in v0")]
-    TransferHookForbidden,
+    GuardAtCapacity = 11,
     #[error("Receive policy not enabled on destination")]
-    PolicyNotEnabled,
+    PolicyNotEnabled = 13,
     #[error("Receipt not found or invalid")]
-    InvalidReceipt,
+    InvalidReceipt = 14,
     #[error("Receipt not expired")]
-    ReceiptNotExpired,
-    #[error("Receipt already closed")]
-    ReceiptClosed,
+    ReceiptNotExpired = 15,
     #[error("Unauthorized recovery / claim")]
-    UnauthorizedClaim,
+    UnauthorizedClaim = 17,
     #[error("Allowlist exceeds fixed cap")]
-    AllowlistTooLarge,
+    AllowlistTooLarge = 18,
     #[error("Overflow")]
-    Overflow,
+    Overflow = 19,
     #[error("Invalid PDA")]
-    InvalidPda,
+    InvalidPda = 20,
     #[error("Bond destination must be the recorded bond payer")]
-    InvalidBondDestination,
-    #[error("Unsupported extension combination")]
-    UnsupportedExtension,
+    InvalidBondDestination = 21,
+    #[error("Receive policy cannot coexist with other account extensions in v0")]
+    UnsupportedExtension = 22,
     #[error("Guard custody is not transferable outside claim / expiry")]
-    GuardNotTransferable,
+    GuardNotTransferable = 23,
     #[error("Source and destination must differ")]
-    SelfTransferForbidden,
+    SelfTransferForbidden = 24,
     #[error("Unrecognized receive-policy mode byte")]
-    InvalidPolicyMode,
+    InvalidPolicyMode = 25,
     #[error("Receipt bond exceeds the protocol maximum")]
-    PolicyBondTooLarge,
+    PolicyBondTooLarge = 26,
     #[error("Receipt TTL exceeds the protocol maximum")]
-    PolicyTtlTooLarge,
+    PolicyTtlTooLarge = 27,
 }
 
 impl From<ReceiveTokenError> for ProgramError {

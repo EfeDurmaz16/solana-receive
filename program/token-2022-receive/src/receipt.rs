@@ -82,41 +82,6 @@ pub fn assert_receipt_pda(
 }
 
 impl Receipt {
-    pub fn new(
-        amount: u64,
-        mint: Pubkey,
-        source_token_account: Pubkey,
-        source_owner: Pubkey,
-        destination_token_account: Pubkey,
-        receiver_owner: Pubkey,
-        recovery_authority_mode: RecoveryAuthorityMode,
-        recovery_authority: Pubkey,
-        created_slot: u64,
-        expires_slot: u64,
-        bond_lamports: u64,
-        bond_payer: Pubkey,
-        unique_nonce: [u8; 32],
-    ) -> Self {
-        Self {
-            discriminator: RECEIPT_DISCRIMINATOR,
-            amount,
-            mint,
-            source_token_account,
-            source_owner,
-            destination_token_account,
-            receiver_owner,
-            recovery_authority_mode: recovery_authority_mode as u8,
-            status: ReceiptStatus::Open as u8,
-            _padding: [0; 6],
-            recovery_authority,
-            created_slot,
-            expires_slot,
-            bond_lamports,
-            bond_payer,
-            unique_nonce,
-        }
-    }
-
     pub fn is_open(&self) -> bool {
         self.status == ReceiptStatus::Open as u8
     }

@@ -1,13 +1,17 @@
 //! TransferChecked with credited vs held outcomes.
 
 use crate::error::ReceiveTokenError;
-use crate::extension::receive_policy::PolicyOutcome;
-use crate::extension::tlv::{get_receive_policy, has_receive_policy, pack_account, unpack_account};
+use crate::extension::tlv::{
+    assert_no_other_extensions, get_receive_policy, has_receive_policy, pack_account,
+    unpack_account,
+};
 use crate::guard::{
     assert_guard_state_pda, assert_guard_token_pda, load_guard_state, GuardState, GUARD_STATE_SIZE,
 };
 use crate::processor::require_signer;
-use crate::receipt::{assert_receipt_pda, Receipt, RECEIPT_SIZE};
+use crate::receipt::{
+    assert_receipt_pda, Receipt, ReceiptStatus, RECEIPT_DISCRIMINATOR, RECEIPT_SIZE,
+};
 use crate::state::{Mint, MINT_SIZE};
 use bytemuck::{bytes_of, from_bytes_mut};
 use solana_program::{
@@ -87,7 +91,9 @@ pub fn process_transfer_checked(
         return Err(ReceiveTokenError::MintMismatch.into());
     }
 
-    let (dest_owner, dest_mint, policy_accepts) = {
+    // Read the destination once: the policy decision and every field the held branch needs
+    // come from the same borrow, so no second decode can disagree with the first.
+    let (dest_owner, dest_mint, policy) = {
         let dest_data = destination_info.try_borrow_data()?;
         let dest = unpack_account(&dest_data)?;
         if dest.is_frozen() {
@@ -96,13 +102,13 @@ pub fn process_transfer_checked(
         if dest.mint != source_mint {
             return Err(ReceiveTokenError::MintMismatch.into());
         }
-        let accepts = if dest_has_policy {
-            let policy = get_receive_policy(&dest_data)?;
-            policy.accepts(amount, &source_owner)?
+        let policy = if dest_has_policy {
+            assert_no_other_extensions(&dest_data)?;
+            Some(get_receive_policy(&dest_data)?)
         } else {
-            true
+            None
         };
-        (dest.owner, dest.mint, accepts)
+        (dest.owner, dest.mint, policy)
     };
 
     if source_info.key == destination_info.key {
@@ -142,108 +148,95 @@ pub fn process_transfer_checked(
         return Err(ReceiveTokenError::GuardNotTransferable.into());
     }
 
-    let outcome = if policy_accepts {
-        PolicyOutcome::Credited
+    let policy = policy.ok_or(ReceiveTokenError::PolicyNotEnabled)?;
+
+    if policy.accepts(amount, &source_owner)? {
+        move_amount(source_info, destination_info, amount, authority_info)?;
+        Ok(())
     } else {
-        PolicyOutcome::Held
-    };
-
-    match outcome {
-        PolicyOutcome::Credited => {
-            move_amount(source_info, destination_info, amount, authority_info)?;
-            Ok(())
-        }
-        PolicyOutcome::Held => {
-            let (policy_ttl, policy_bond, recovery_mode, recovery_authority) = {
-                let dest_data = destination_info.try_borrow_data()?;
-                let policy = get_receive_policy(&dest_data)?;
-                (
-                    policy.receipt_ttl_slots,
-                    policy.receipt_bond_lamports,
-                    policy.recovery_mode()?,
-                    policy.recovery_authority,
-                )
-            };
-
-            {
-                let mut gs_data = guard_state.try_borrow_mut_data()?;
-                if gs_data.len() < GUARD_STATE_SIZE {
-                    return Err(ReceiveTokenError::InvalidAccountData.into());
-                }
-                let gs = from_bytes_mut::<GuardState>(&mut gs_data[..GUARD_STATE_SIZE]);
-                gs.try_increment_open()?;
+        {
+            let mut gs_data = guard_state.try_borrow_mut_data()?;
+            if gs_data.len() < GUARD_STATE_SIZE {
+                return Err(ReceiveTokenError::InvalidAccountData.into());
             }
+            let gs = from_bytes_mut::<GuardState>(&mut gs_data[..GUARD_STATE_SIZE]);
+            gs.try_increment_open()?;
+        }
 
-            let receipt_bump = assert_receipt_pda(
-                receipt_info,
-                &dest_owner,
-                &dest_mint,
-                &source_owner,
-                &unique_nonce,
+        let receipt_bump = assert_receipt_pda(
+            receipt_info,
+            &dest_owner,
+            &dest_mint,
+            &source_owner,
+            &unique_nonce,
+            program_id,
+        )?;
+
+        if !receipt_info.data_is_empty() {
+            return Err(ReceiveTokenError::AlreadyInUse.into());
+        }
+
+        let clock = Clock::get()?;
+        let created_slot = clock.slot;
+        let expires_slot = created_slot
+            .checked_add(policy.receipt_ttl_slots)
+            .ok_or(ReceiveTokenError::Overflow)?;
+
+        let rent = Rent::get()?;
+        let receipt_rent = rent.minimum_balance(RECEIPT_SIZE);
+        let bond = policy.receipt_bond_lamports.max(receipt_rent);
+
+        let seeds: &[&[u8]] = &[
+            crate::constants::RECEIPT_SEED,
+            dest_owner.as_ref(),
+            dest_mint.as_ref(),
+            source_owner.as_ref(),
+            unique_nonce.as_ref(),
+            &[receipt_bump],
+        ];
+        invoke_signed(
+            &system_instruction::create_account(
+                bond_payer.key,
+                receipt_info.key,
+                bond,
+                RECEIPT_SIZE as u64,
                 program_id,
-            )?;
+            ),
+            &[
+                bond_payer.clone(),
+                receipt_info.clone(),
+                system_program.clone(),
+            ],
+            &[seeds],
+        )?;
 
-            if !receipt_info.data_is_empty() {
-                return Err(ReceiveTokenError::AlreadyInUse.into());
-            }
-
-            let clock = Clock::get()?;
-            let created_slot = clock.slot;
-            let expires_slot = created_slot
-                .checked_add(policy_ttl)
-                .ok_or(ReceiveTokenError::Overflow)?;
-
-            let rent = Rent::get()?;
-            let receipt_rent = rent.minimum_balance(RECEIPT_SIZE);
-            let bond = policy_bond.max(receipt_rent);
-
-            let seeds: &[&[u8]] = &[
-                crate::constants::RECEIPT_SEED,
-                dest_owner.as_ref(),
-                dest_mint.as_ref(),
-                source_owner.as_ref(),
-                unique_nonce.as_ref(),
-                &[receipt_bump],
-            ];
-            invoke_signed(
-                &system_instruction::create_account(
-                    bond_payer.key,
-                    receipt_info.key,
-                    bond,
-                    RECEIPT_SIZE as u64,
-                    program_id,
-                ),
-                &[
-                    bond_payer.clone(),
-                    receipt_info.clone(),
-                    system_program.clone(),
-                ],
-                &[seeds],
-            )?;
-
-            {
-                let mut rdata = receipt_info.try_borrow_mut_data()?;
-                let receipt = Receipt::new(
-                    amount,
-                    dest_mint,
-                    *source_info.key,
-                    source_owner,
-                    *destination_info.key,
-                    dest_owner,
-                    recovery_mode,
-                    recovery_authority,
-                    created_slot,
-                    expires_slot,
-                    bond,
-                    *bond_payer.key,
-                    unique_nonce,
-                );
-                rdata[..RECEIPT_SIZE].copy_from_slice(bytes_of(&receipt));
-            }
-
-            move_amount(source_info, guard_token, amount, authority_info)?;
-            Ok(())
+        {
+            let mut rdata = receipt_info.try_borrow_mut_data()?;
+            // Named fields, not 13 positional arguments: two adjacent Pubkey pairs here
+            // (source/receiver owner, source/destination account) would swap silently.
+            let receipt = Receipt {
+                discriminator: RECEIPT_DISCRIMINATOR,
+                amount,
+                mint: dest_mint,
+                source_token_account: *source_info.key,
+                source_owner,
+                destination_token_account: *destination_info.key,
+                receiver_owner: dest_owner,
+                recovery_authority_mode: policy.recovery_mode()? as u8,
+                status: ReceiptStatus::Open as u8,
+                _padding: [0; 6],
+                recovery_authority: policy.recovery_authority,
+                created_slot,
+                expires_slot,
+                bond_lamports: bond,
+                bond_payer: *bond_payer.key,
+                unique_nonce,
+            };
+            rdata[..RECEIPT_SIZE].copy_from_slice(bytes_of(&receipt));
         }
+
+        move_amount(source_info, guard_token, amount, authority_info)?;
+        Ok(())
     }
 }
 

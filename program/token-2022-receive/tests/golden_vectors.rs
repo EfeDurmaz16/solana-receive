@@ -223,10 +223,3 @@ fn unique_nonce_collision_fails_already_in_use() {
     assert_eq!(out.source_amt, 100);
     assert_eq!(out.dest_amt, 0);
 }
-
-/// Catalog: every non-deferred sRFC vector ID has a named test above.
-#[test]
-fn srfc_vector_catalog_complete() {
-    let ids = ["V-NP", "V-CR", "V-HD", "V-FL", "V-CL", "V-EX", "V-AU"];
-    assert_eq!(ids.len(), 7);
-}

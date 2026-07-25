@@ -95,8 +95,17 @@ fn policy_is_write_once() {
     let owner = fx.dest_owner.insecure_clone();
     let acct = policy_ready_account(&mut fx, &owner.pubkey());
 
-    init_policy(&mut fx, &acct.pubkey(), &owner, 0, 0, 0, 0, DEFAULT_RECEIPT_TTL_SLOTS)
-        .expect("first policy write");
+    init_policy(
+        &mut fx,
+        &acct.pubkey(),
+        &owner,
+        0,
+        0,
+        0,
+        0,
+        DEFAULT_RECEIPT_TTL_SLOTS,
+    )
+    .expect("first policy write");
 
     // Rewriting in place would let the receiver flip min_amount / recovery authority / TTL
     // between a sender's quote and the sender's transaction.
@@ -122,8 +131,17 @@ fn out_of_range_source_owner_mode_is_rejected() {
 
     // Previously stored verbatim and decoded fail-open to AllowAll, silently disabling an
     // allowlist the receiver believed was in force.
-    init_policy(&mut fx, &acct.pubkey(), &owner, 0, 7, 0, 0, DEFAULT_RECEIPT_TTL_SLOTS)
-        .expect_err("unknown source_owner_mode must be rejected");
+    init_policy(
+        &mut fx,
+        &acct.pubkey(),
+        &owner,
+        0,
+        7,
+        0,
+        0,
+        DEFAULT_RECEIPT_TTL_SLOTS,
+    )
+    .expect_err("unknown source_owner_mode must be rejected");
 
     init_policy(
         &mut fx,
@@ -144,8 +162,17 @@ fn out_of_range_recovery_authority_mode_is_rejected() {
     let owner = fx.dest_owner.insecure_clone();
     let acct = policy_ready_account(&mut fx, &owner.pubkey());
 
-    init_policy(&mut fx, &acct.pubkey(), &owner, 0, 0, 9, 0, DEFAULT_RECEIPT_TTL_SLOTS)
-        .expect_err("unknown recovery_authority_mode must be rejected");
+    init_policy(
+        &mut fx,
+        &acct.pubkey(),
+        &owner,
+        0,
+        0,
+        9,
+        0,
+        DEFAULT_RECEIPT_TTL_SLOTS,
+    )
+    .expect_err("unknown recovery_authority_mode must be rejected");
 }
 
 #[test]
@@ -192,8 +219,17 @@ fn receipt_ttl_is_capped() {
     init_policy(&mut fx, &acct.pubkey(), &owner, 0, 0, 0, 0, u64::MAX / 2)
         .expect_err("TTL above the cap must be rejected");
 
-    init_policy(&mut fx, &acct.pubkey(), &owner, 0, 0, 0, 0, MAX_RECEIPT_TTL_SLOTS)
-        .expect("TTL at the cap is accepted");
+    init_policy(
+        &mut fx,
+        &acct.pubkey(),
+        &owner,
+        0,
+        0,
+        0,
+        0,
+        MAX_RECEIPT_TTL_SLOTS,
+    )
+    .expect("TTL at the cap is accepted");
 }
 
 #[test]
@@ -204,6 +240,15 @@ fn policy_requires_a_program_owned_account() {
     fx.svm.airdrop(&foreign.pubkey(), 10_000_000).unwrap();
     fx.svm.expire_blockhash();
 
-    init_policy(&mut fx, &foreign.pubkey(), &owner, 0, 0, 0, 0, DEFAULT_RECEIPT_TTL_SLOTS)
-        .expect_err("policy target must be owned by this program");
+    init_policy(
+        &mut fx,
+        &foreign.pubkey(),
+        &owner,
+        0,
+        0,
+        0,
+        0,
+        DEFAULT_RECEIPT_TTL_SLOTS,
+    )
+    .expect_err("policy target must be owned by this program");
 }

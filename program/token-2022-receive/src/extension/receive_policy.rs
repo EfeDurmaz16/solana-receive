@@ -109,10 +109,3 @@ impl ReceivePolicy {
         })
     }
 }
-
-/// Transfer outcome after policy evaluation (policy path only).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PolicyOutcome {
-    Credited,
-    Held,
-}

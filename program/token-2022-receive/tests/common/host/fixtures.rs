@@ -405,21 +405,24 @@ fn settle_receipt(
             Settle::Claim => 0,
             Settle::Close { dest_prior, .. } => dest_prior,
         };
-        let receipt = Receipt::new(
+        let receipt = Receipt {
+            discriminator: token_2022_receive::receipt::RECEIPT_DISCRIMINATOR,
             amount,
             mint,
-            Pubkey::new_unique(),
+            source_token_account: Pubkey::new_unique(),
             source_owner,
-            Pubkey::new_unique(),
-            dest_owner,
-            recovery,
-            Pubkey::default(),
-            created,
-            expires,
-            bond,
+            destination_token_account: Pubkey::new_unique(),
+            receiver_owner: dest_owner,
+            recovery_authority_mode: recovery as u8,
+            status: token_2022_receive::receipt::ReceiptStatus::Open as u8,
+            _padding: [0; 6],
+            recovery_authority: Pubkey::default(),
+            created_slot: created,
+            expires_slot: expires,
+            bond_lamports: bond,
             bond_payer,
-            nonce,
-        );
+            unique_nonce: nonce,
+        };
 
         let mut receipt_lamports = bond;
         let mut gtl = 1u64;

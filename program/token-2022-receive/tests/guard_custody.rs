@@ -18,9 +18,7 @@ use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signer;
 use token_2022_receive::extension::tlv::unpack_account;
 use token_2022_receive::guard::{derive_guard_state_address, derive_guard_token_address};
-use token_2022_receive::instruction::{
-    claim_receipt, transfer_checked, PolicyTransferAccounts,
-};
+use token_2022_receive::instruction::{claim_receipt, transfer_checked, PolicyTransferAccounts};
 use token_2022_receive::receipt::derive_receipt_address;
 
 struct Held {
@@ -108,7 +106,7 @@ fn receiver_cannot_drain_guard_with_plain_transfer() {
         &[&fx.dest_owner],
         vec![transfer_checked(
             &fx.program_id,
-            &held.guard_token,       // source = the guard itself
+            &held.guard_token, // source = the guard itself
             &fx.mint.pubkey(),
             &loot.pubkey(),          // plain no-policy destination -> 4-account path
             &fx.dest_owner.pubkey(), // receiver signs
@@ -206,7 +204,7 @@ fn guard_cannot_be_a_held_transfer_destination() {
             6,
             nonce,
             Some(PolicyTransferAccounts {
-                guard_token: guard_token,
+                guard_token,
                 guard_state,
                 receipt,
                 bond_payer: fx.payer.pubkey(),

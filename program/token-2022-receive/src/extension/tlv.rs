@@ -66,13 +66,40 @@ pub fn get_receive_policy(data: &[u8]) -> Result<ReceivePolicy, ProgramError> {
 ///
 /// A malformed extension is an error, never a `false`: swallowing it would route the transfer
 /// down the no-policy path and credit the destination, silently bypassing the very policy the
-/// receiver attached.
+/// receiver attached. Presence is answered from the TLV header alone — no value copy.
 pub fn has_receive_policy(data: &[u8]) -> Result<bool, ProgramError> {
-    match get_receive_policy(data) {
-        Ok(_) => Ok(true),
+    match find_extension_offset(data, EXTENSION_TYPE_RECEIVE_POLICY) {
+        Ok((_, len)) if len == core::mem::size_of::<ReceivePolicy>() => Ok(true),
+        Ok(_) => Err(ReceiveTokenError::InvalidAccountData.into()),
         Err(e) if e == ReceiveTokenError::PolicyNotEnabled.into() => Ok(false),
         Err(e) => Err(e),
     }
+}
+
+/// SPEC §9: ReceivePolicy does not coexist with other account extensions in v0.
+///
+/// Without this the claim was documentation only — the TLV walker happily skipped past any
+/// other extension, so a Transfer Hook or Confidential Transfer account would have taken the
+/// policy path with semantics this version never defined.
+pub fn assert_no_other_extensions(data: &[u8]) -> Result<(), ProgramError> {
+    if data.len() < ACCOUNT_SIZE + 1 || data[ACCOUNT_SIZE] != ACCOUNT_TYPE_ACCOUNT {
+        return Ok(());
+    }
+    let mut cursor = ACCOUNT_SIZE + 1;
+    while cursor + TLV_HEADER_SIZE <= data.len() {
+        let typ = u16::from_le_bytes(data[cursor..cursor + 2].try_into().unwrap());
+        if typ == 0 {
+            return Ok(());
+        }
+        let len = u16::from_le_bytes(data[cursor + 2..cursor + 4].try_into().unwrap()) as usize;
+        if typ != EXTENSION_TYPE_RECEIVE_POLICY {
+            return Err(ReceiveTokenError::UnsupportedExtension.into());
+        }
+        cursor = (cursor + TLV_HEADER_SIZE)
+            .checked_add(len)
+            .ok_or(ReceiveTokenError::Overflow)?;
+    }
+    Ok(())
 }
 
 pub fn account_len_with_receive_policy() -> usize {

@@ -14,8 +14,9 @@ pub const MINT_SIZE: usize = 82;
 pub const ACCOUNT_SIZE: usize = 165;
 
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AccountState {
+    #[default]
     Uninitialized = 0,
     Initialized = 1,
     Frozen = 2,
@@ -40,12 +41,6 @@ pub struct TokenAccount {
     pub is_native: COption<u64>,
     pub delegated_amount: u64,
     pub close_authority: COption<Pubkey>,
-}
-
-impl Default for AccountState {
-    fn default() -> Self {
-        Self::Uninitialized
-    }
 }
 
 impl TokenAccount {
