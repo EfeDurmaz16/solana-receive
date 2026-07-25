@@ -6,6 +6,15 @@ pub const MAX_OPEN_RECEIPTS: u8 = 64;
 /// Default receipt TTL ≈ 7 days at ~400 ms/slot → 1_512_000 slots.
 pub const DEFAULT_RECEIPT_TTL_SLOTS: u64 = 1_512_000;
 
+/// Upper bound on receiver-chosen TTL ≈ 30 days. The receiver picks the TTL but the sender
+/// pays for it in locked funds, so an unbounded TTL would let a destination hold a rejected
+/// transfer hostage indefinitely under `Receiver` / `ThirdParty` recovery.
+pub const MAX_RECEIPT_TTL_SLOTS: u64 = 6_480_000;
+
+/// Upper bound on receiver-chosen receipt bond (1 SOL). The bond is debited from the
+/// bond_payer signer, not from the receiver, so an unbounded value is a griefing lever.
+pub const MAX_RECEIPT_BOND_LAMPORTS: u64 = 1_000_000_000;
+
 /// Fixed-cap in-account source-owner allowlist (v0).
 pub const ALLOWLIST_CAP: usize = 8;
 

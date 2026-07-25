@@ -30,9 +30,9 @@ fn policy_allow_all_credits_above_min() {
     policy.min_amount = 100;
     policy.source_owner_mode = SourceOwnerMode::AllowAll as u8;
     let owner = Pubkey::new_unique();
-    assert!(policy.accepts(100, &owner));
-    assert!(policy.accepts(101, &owner));
-    assert!(!policy.accepts(99, &owner));
+    assert!(policy.accepts(100, &owner).unwrap());
+    assert!(policy.accepts(101, &owner).unwrap());
+    assert!(!policy.accepts(99, &owner).unwrap());
 }
 
 #[test]
@@ -43,8 +43,8 @@ fn policy_allowlist_membership_uses_source_owner() {
     policy.source_owner_mode = SourceOwnerMode::Allowlist as u8;
     policy.allowlist_len = 1;
     policy.allowlist[0] = allowed;
-    assert!(policy.accepts(1, &allowed));
-    assert!(!policy.accepts(1, &other));
+    assert!(policy.accepts(1, &allowed).unwrap());
+    assert!(!policy.accepts(1, &other).unwrap());
 }
 
 #[test]

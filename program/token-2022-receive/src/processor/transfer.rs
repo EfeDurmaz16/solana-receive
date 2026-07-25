@@ -96,7 +96,7 @@ pub fn process_transfer_checked(
         }
         let accepts = if dest_has_policy {
             let policy = get_receive_policy(&dest_data)?;
-            policy.accepts(amount, &source_owner)
+            policy.accepts(amount, &source_owner)?
         } else {
             true
         };
@@ -156,7 +156,7 @@ pub fn process_transfer_checked(
                 (
                     policy.receipt_ttl_slots,
                     policy.receipt_bond_lamports,
-                    policy.recovery_mode(),
+                    policy.recovery_mode()?,
                     policy.recovery_authority,
                 )
             };

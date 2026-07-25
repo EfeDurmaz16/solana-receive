@@ -159,8 +159,8 @@ fn v_au_allowlist_uses_source_owner() {
     policy.allowlist_len = 1;
     policy.allowlist[0] = allowed;
 
-    assert!(policy.accepts(1, &allowed));
-    assert!(!policy.accepts(1, &other));
+    assert!(policy.accepts(1, &allowed).unwrap());
+    assert!(!policy.accepts(1, &other).unwrap());
 
     let credited = policy_transfer_ex(
         &policy,

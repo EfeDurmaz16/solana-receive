@@ -41,6 +41,7 @@ pub fn process_instruction(
         } => {
             msg!("Instruction: InitializeReceivePolicy");
             initialize::process_initialize_receive_policy(
+                program_id,
                 accounts,
                 min_amount,
                 source_owner_mode,

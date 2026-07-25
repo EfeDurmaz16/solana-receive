@@ -55,6 +55,12 @@ pub enum ReceiveTokenError {
     GuardNotTransferable,
     #[error("Source and destination must differ")]
     SelfTransferForbidden,
+    #[error("Unrecognized receive-policy mode byte")]
+    InvalidPolicyMode,
+    #[error("Receipt bond exceeds the protocol maximum")]
+    PolicyBondTooLarge,
+    #[error("Receipt TTL exceeds the protocol maximum")]
+    PolicyTtlTooLarge,
 }
 
 impl From<ReceiveTokenError> for ProgramError {

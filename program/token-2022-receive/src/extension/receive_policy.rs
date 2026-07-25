@@ -1,8 +1,9 @@
 //! Destination-account ReceivePolicy extension (v0).
 
 use crate::constants::{ALLOWLIST_CAP, DEFAULT_RECEIPT_TTL_SLOTS};
+use crate::error::ReceiveTokenError;
 use bytemuck::{Pod, Zeroable};
-use solana_program::pubkey::Pubkey;
+use solana_program::{program_error::ProgramError, pubkey::Pubkey};
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -60,20 +61,36 @@ impl Default for ReceivePolicy {
     }
 }
 
-impl ReceivePolicy {
-    pub fn source_owner_mode(&self) -> SourceOwnerMode {
-        match self.source_owner_mode {
-            1 => SourceOwnerMode::Allowlist,
-            _ => SourceOwnerMode::AllowAll,
+impl SourceOwnerMode {
+    /// Fail closed: an unrecognised byte is a corrupt policy, not "allow everything".
+    pub fn try_from_byte(b: u8) -> Result<Self, ProgramError> {
+        match b {
+            0 => Ok(Self::AllowAll),
+            1 => Ok(Self::Allowlist),
+            _ => Err(ReceiveTokenError::InvalidPolicyMode.into()),
         }
     }
+}
 
-    pub fn recovery_mode(&self) -> RecoveryAuthorityMode {
-        match self.recovery_authority_mode {
-            1 => RecoveryAuthorityMode::Receiver,
-            2 => RecoveryAuthorityMode::ThirdParty,
-            _ => RecoveryAuthorityMode::Originator,
+impl RecoveryAuthorityMode {
+    /// Fail closed: an unrecognised byte must not silently become `Originator`.
+    pub fn try_from_byte(b: u8) -> Result<Self, ProgramError> {
+        match b {
+            0 => Ok(Self::Originator),
+            1 => Ok(Self::Receiver),
+            2 => Ok(Self::ThirdParty),
+            _ => Err(ReceiveTokenError::InvalidPolicyMode.into()),
         }
+    }
+}
+
+impl ReceivePolicy {
+    pub fn source_owner_mode(&self) -> Result<SourceOwnerMode, ProgramError> {
+        SourceOwnerMode::try_from_byte(self.source_owner_mode)
+    }
+
+    pub fn recovery_mode(&self) -> Result<RecoveryAuthorityMode, ProgramError> {
+        RecoveryAuthorityMode::try_from_byte(self.recovery_authority_mode)
     }
 
     pub fn allowlist_slice(&self) -> &[Pubkey] {
@@ -81,15 +98,15 @@ impl ReceivePolicy {
         &self.allowlist[..n]
     }
 
-    /// Pure policy evaluation: returns true if transfer should be **credited**.
-    pub fn accepts(&self, amount: u64, source_owner: &Pubkey) -> bool {
+    /// Pure policy evaluation: `Ok(true)` if the transfer should be **credited**.
+    pub fn accepts(&self, amount: u64, source_owner: &Pubkey) -> Result<bool, ProgramError> {
         if amount < self.min_amount {
-            return false;
+            return Ok(false);
         }
-        match self.source_owner_mode() {
+        Ok(match self.source_owner_mode()? {
             SourceOwnerMode::AllowAll => true,
             SourceOwnerMode::Allowlist => self.allowlist_slice().iter().any(|k| k == source_owner),
-        }
+        })
     }
 }
 

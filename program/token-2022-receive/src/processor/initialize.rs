@@ -1,8 +1,11 @@
-use crate::constants::{ALLOWLIST_CAP, DEFAULT_RECEIPT_TTL_SLOTS};
+use crate::constants::{
+    ALLOWLIST_CAP, DEFAULT_RECEIPT_TTL_SLOTS, MAX_RECEIPT_BOND_LAMPORTS, MAX_RECEIPT_TTL_SLOTS,
+};
 use crate::error::ReceiveTokenError;
-use crate::extension::receive_policy::{ReceivePolicy, SourceOwnerMode};
+use crate::extension::receive_policy::{ReceivePolicy, RecoveryAuthorityMode, SourceOwnerMode};
 use crate::extension::tlv::{
-    account_len_with_receive_policy, pack_account, unpack_account, write_receive_policy_tlv,
+    account_len_with_receive_policy, has_receive_policy, pack_account, unpack_account,
+    write_receive_policy_tlv,
 };
 use crate::guard::{
     assert_guard_state_pda, assert_guard_token_pda, derive_guard_state_address,
@@ -102,6 +105,7 @@ pub fn process_initialize_account3(
 }
 
 pub fn process_initialize_receive_policy(
+    program_id: &Pubkey,
     accounts: &[AccountInfo],
     min_amount: u64,
     source_owner_mode: u8,
@@ -116,10 +120,19 @@ pub fn process_initialize_receive_policy(
     let owner_info = next_account_info(account_info_iter)?;
     require_signer(owner_info)?;
 
+    if token_account_info.owner != program_id {
+        return Err(ProgramError::IncorrectProgramId);
+    }
     if allowlist.len() > ALLOWLIST_CAP {
         return Err(ReceiveTokenError::AllowlistTooLarge.into());
     }
-    let _ = SourceOwnerMode::Allowlist; // mode validated by accepts()
+    // Parse the mode bytes here so an out-of-range value can never reach storage and decode
+    // fail-open to AllowAll / Originator on the transfer path.
+    SourceOwnerMode::try_from_byte(source_owner_mode)?;
+    RecoveryAuthorityMode::try_from_byte(recovery_authority_mode)?;
+    if receipt_bond_lamports > MAX_RECEIPT_BOND_LAMPORTS {
+        return Err(ReceiveTokenError::PolicyBondTooLarge.into());
+    }
 
     let mut data = token_account_info.try_borrow_mut_data()?;
     let account = unpack_account(&data)?;
@@ -132,12 +145,21 @@ pub fn process_initialize_receive_policy(
     if data.len() < account_len_with_receive_policy() {
         return Err(ReceiveTokenError::InvalidAccountData.into());
     }
+    // A policy is write-once in v0. Rewriting it in place would let a receiver change
+    // min_amount, recovery authority, bond and TTL between a sender's quote and the sender's
+    // transaction — turning an accepted payment into a held one the receiver can claim.
+    if has_receive_policy(&data) {
+        return Err(ReceiveTokenError::AlreadyInUse.into());
+    }
 
     let ttl = if receipt_ttl_slots == 0 {
         DEFAULT_RECEIPT_TTL_SLOTS
     } else {
         receipt_ttl_slots
     };
+    if ttl > MAX_RECEIPT_TTL_SLOTS {
+        return Err(ReceiveTokenError::PolicyTtlTooLarge.into());
+    }
 
     let mut policy = ReceivePolicy {
         min_amount,
