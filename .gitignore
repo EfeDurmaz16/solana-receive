@@ -1,0 +1,14 @@
+/target
+**/*.rs.bk
+.vendor-token-2022/
+node_modules/
+dist/
+.DS_Store
+*.so
+*-keypair.json
+**/*-keypair.json
+keys/
+.anchor/
+test-ledger/
+clients/js/node_modules/
+clients/js/dist/
