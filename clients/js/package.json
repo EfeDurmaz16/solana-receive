@@ -1,0 +1,21 @@
+{
+  "name": "@solana-receive/helpers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Minimal helpers to resolve receive-policy accounts for the Token-2022-shaped reference program",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@solana/addresses": "^2.1.0",
+    "@solana/keys": "^2.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}
