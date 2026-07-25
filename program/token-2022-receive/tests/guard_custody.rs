@@ -215,3 +215,51 @@ fn guard_cannot_be_a_held_transfer_destination() {
     err.expect("ordinary held transfer still works");
     assert_eq!(token_amount(&fx.svm, &guard_token), 99);
 }
+
+#[test]
+fn transfer_reports_credited_vs_held_in_return_data() {
+    // `held` returns Ok, so a caller checking only "did the tx land" would read a diverted
+    // payment as a delivered one. The outcome byte must distinguish them.
+    let mut fx = Fixture::boot(1_000).with_policy_dest(100);
+    let (guard_token, _) =
+        derive_guard_token_address(&fx.dest_owner.pubkey(), &fx.mint.pubkey(), &fx.program_id);
+    let (guard_state, _) =
+        derive_guard_state_address(&fx.dest_owner.pubkey(), &fx.mint.pubkey(), &fx.program_id);
+
+    let mut outcome = |amount: u64, nonce: [u8; 32]| -> u8 {
+        let (receipt, _) = derive_receipt_address(
+            &fx.dest_owner.pubkey(),
+            &fx.mint.pubkey(),
+            &fx.source_owner.pubkey(),
+            &nonce,
+            &fx.program_id,
+        );
+        let meta = send(
+            &mut fx.svm,
+            &fx.payer,
+            &[&fx.source_owner],
+            vec![transfer_checked(
+                &fx.program_id,
+                &fx.source.pubkey(),
+                &fx.mint.pubkey(),
+                &fx.dest.pubkey(),
+                &fx.source_owner.pubkey(),
+                amount,
+                6,
+                nonce,
+                Some(PolicyTransferAccounts {
+                    guard_token,
+                    guard_state,
+                    receipt,
+                    bond_payer: fx.payer.pubkey(),
+                }),
+            )],
+        )
+        .expect("transfer");
+        fx.svm.expire_blockhash();
+        meta.return_data.data[0]
+    };
+
+    assert_eq!(outcome(99, [31u8; 32]), 1, "below min_amount -> held");
+    assert_eq!(outcome(150, [32u8; 32]), 0, "at or above min_amount -> credited");
+}

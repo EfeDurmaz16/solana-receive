@@ -18,7 +18,9 @@ use solana_program::{
     account_info::{next_account_info, AccountInfo},
     clock::Clock,
     entrypoint::ProgramResult,
+    msg,
     program::invoke_signed,
+    program::set_return_data,
     program_error::ProgramError,
     program_option::COption,
     program_pack::Pack,
@@ -117,7 +119,7 @@ pub fn process_transfer_checked(
 
     if !dest_has_policy {
         move_amount(source_info, destination_info, amount, authority_info)?;
-        return Ok(());
+        return credited();
     }
 
     let guard_token = next_account_info(account_info_iter)
@@ -152,7 +154,7 @@ pub fn process_transfer_checked(
 
     if policy.accepts(amount, &source_owner)? {
         move_amount(source_info, destination_info, amount, authority_info)?;
-        Ok(())
+        credited()
     } else {
         {
             let mut gs_data = guard_state.try_borrow_mut_data()?;
@@ -236,8 +238,31 @@ pub fn process_transfer_checked(
         }
 
         move_amount(source_info, guard_token, amount, authority_info)?;
-        Ok(())
+        held()
     }
+}
+
+/// Transfer outcome, reported as instruction return data.
+///
+/// `held` succeeds, so a caller that only checks "did the transaction land" would read a
+/// diverted payment as a delivered one. The outcome byte makes the distinction machine
+/// readable without decoding the destination account.
+#[repr(u8)]
+pub enum TransferOutcome {
+    Credited = 0,
+    Held = 1,
+}
+
+fn credited() -> ProgramResult {
+    msg!("Outcome: credited");
+    set_return_data(&[TransferOutcome::Credited as u8]);
+    Ok(())
+}
+
+fn held() -> ProgramResult {
+    msg!("Outcome: held");
+    set_return_data(&[TransferOutcome::Held as u8]);
+    Ok(())
 }
 
 fn move_amount(
