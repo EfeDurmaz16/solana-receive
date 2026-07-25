@@ -58,7 +58,7 @@ fn tlv_roundtrip_receive_policy() {
     policy.allowlist[0] = Pubkey::new_unique();
     policy.allowlist[1] = Pubkey::new_unique();
     write_receive_policy_tlv(&mut data, &policy).unwrap();
-    assert!(has_receive_policy(&data));
+    assert!(has_receive_policy(&data).unwrap());
     let got = get_receive_policy(&data).unwrap();
     assert_eq!(got.min_amount, 42);
     assert_eq!(got.allowlist_len, 2);
@@ -161,4 +161,29 @@ fn instruction_pack_unpack_policy_init() {
         }
         _ => panic!("wrong variant"),
     }
+}
+
+#[test]
+fn plain_token_account_reports_no_policy() {
+    // A bare 165-byte account carries no TLV region at all: absence, not corruption.
+    let data = vec![0u8; token_2022_receive::state::ACCOUNT_SIZE];
+    assert!(!has_receive_policy(&data).unwrap());
+}
+
+#[test]
+fn malformed_policy_tlv_errors_instead_of_reporting_no_policy() {
+    // Reporting `false` here would route the transfer down the no-policy path and credit the
+    // destination, silently bypassing the policy the receiver attached.
+    let mut data = vec![0u8; account_len_with_receive_policy()];
+    write_receive_policy_tlv(&mut data, &ReceivePolicy::default()).unwrap();
+
+    // Declared length shorter than ReceivePolicy: the reader must not run past it.
+    let tlv_len_at = token_2022_receive::state::ACCOUNT_SIZE + 1 + 2;
+    data[tlv_len_at..tlv_len_at + 2].copy_from_slice(&4u16.to_le_bytes());
+    assert!(has_receive_policy(&data).is_err());
+    assert!(get_receive_policy(&data).is_err());
+
+    // Declared length overrunning the account.
+    data[tlv_len_at..tlv_len_at + 2].copy_from_slice(&u16::MAX.to_le_bytes());
+    assert!(has_receive_policy(&data).is_err());
 }

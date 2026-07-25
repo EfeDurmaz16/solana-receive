@@ -3,8 +3,7 @@
 use crate::error::ReceiveTokenError;
 use crate::extension::tlv::{pack_account, unpack_account};
 use crate::guard::{
-    assert_guard_state_pda, assert_guard_token_pda, GuardState, GUARD_STATE_DISCRIMINATOR,
-    GUARD_STATE_SIZE,
+    assert_guard_state_pda, assert_guard_token_pda, load_guard_state, GuardState, GUARD_STATE_SIZE,
 };
 use crate::processor::require_signer;
 use crate::receipt::{Receipt, ReceiptStatus, RECEIPT_DISCRIMINATOR, RECEIPT_SIZE};
@@ -45,21 +44,7 @@ fn validate_guard_accounts(
 ) -> Result<(), ProgramError> {
     assert_guard_token_pda(guard_token, receiver_owner, mint, program_id)?;
     assert_guard_state_pda(guard_state, receiver_owner, mint, program_id)?;
-    let gs_data = guard_state.try_borrow_data()?;
-    if gs_data.len() < GUARD_STATE_SIZE {
-        return Err(ReceiveTokenError::InvalidAccountData.into());
-    }
-    let gs = from_bytes::<GuardState>(&gs_data[..GUARD_STATE_SIZE]);
-    if gs.discriminator != GUARD_STATE_DISCRIMINATOR {
-        return Err(ReceiveTokenError::InvalidAccountData.into());
-    }
-    if gs.receiver != *receiver_owner || gs.mint != *mint {
-        return Err(ReceiveTokenError::InvalidAccountData.into());
-    }
-    if gs.guard_token_account != *guard_token.key {
-        return Err(ReceiveTokenError::InvalidAccountData.into());
-    }
-    Ok(())
+    load_guard_state(guard_state, guard_token.key, receiver_owner, mint)
 }
 
 fn require_bond_dest(bond_dest: &AccountInfo, bond_payer: &Pubkey) -> Result<(), ProgramError> {

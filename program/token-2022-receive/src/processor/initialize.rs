@@ -148,7 +148,7 @@ pub fn process_initialize_receive_policy(
     // A policy is write-once in v0. Rewriting it in place would let a receiver change
     // min_amount, recovery authority, bond and TTL between a sender's quote and the sender's
     // transaction — turning an accepted payment into a held one the receiver can claim.
-    if has_receive_policy(&data) {
+    if has_receive_policy(&data)? {
         return Err(ReceiveTokenError::AlreadyInUse.into());
     }
 

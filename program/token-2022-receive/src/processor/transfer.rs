@@ -3,7 +3,9 @@
 use crate::error::ReceiveTokenError;
 use crate::extension::receive_policy::PolicyOutcome;
 use crate::extension::tlv::{get_receive_policy, has_receive_policy, pack_account, unpack_account};
-use crate::guard::{assert_guard_state_pda, assert_guard_token_pda, GuardState, GUARD_STATE_SIZE};
+use crate::guard::{
+    assert_guard_state_pda, assert_guard_token_pda, load_guard_state, GuardState, GUARD_STATE_SIZE,
+};
 use crate::processor::require_signer;
 use crate::receipt::{assert_receipt_pda, Receipt, RECEIPT_SIZE};
 use crate::state::{Mint, MINT_SIZE};
@@ -46,7 +48,7 @@ pub fn process_transfer_checked(
 
     let dest_has_policy = {
         let dest_data = destination_info.try_borrow_data()?;
-        has_receive_policy(&dest_data)
+        has_receive_policy(&dest_data)?
     };
 
     {
@@ -130,6 +132,8 @@ pub fn process_transfer_checked(
 
     assert_guard_token_pda(guard_token, &dest_owner, &dest_mint, program_id)?;
     assert_guard_state_pda(guard_state, &dest_owner, &dest_mint, program_id)?;
+
+    load_guard_state(guard_state, guard_token.key, &dest_owner, &dest_mint)?;
 
     // Defense in depth: the guard is never a transfer source. Unreachable while the guard's
     // token-level owner is a PDA, but pinned here so an owner-field regression cannot silently

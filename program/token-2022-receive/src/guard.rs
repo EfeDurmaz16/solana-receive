@@ -70,6 +70,30 @@ pub fn assert_guard_state_pda(
     Ok(bump)
 }
 
+/// Load a guard_state whose address is already PDA-asserted, checking that its *contents*
+/// bind to the expected shard. Address alone is not enough: an uninitialized or mismatched
+/// guard_state would otherwise be silently incremented on the held path.
+pub fn load_guard_state(
+    guard_state: &AccountInfo,
+    guard_token: &Pubkey,
+    receiver: &Pubkey,
+    mint: &Pubkey,
+) -> Result<(), ProgramError> {
+    let data = guard_state.try_borrow_data()?;
+    if data.len() < GUARD_STATE_SIZE {
+        return Err(ReceiveTokenError::InvalidAccountData.into());
+    }
+    let gs = bytemuck::from_bytes::<GuardState>(&data[..GUARD_STATE_SIZE]);
+    if gs.discriminator != GUARD_STATE_DISCRIMINATOR
+        || gs.receiver != *receiver
+        || gs.mint != *mint
+        || gs.guard_token_account != *guard_token
+    {
+        return Err(ReceiveTokenError::InvalidAccountData.into());
+    }
+    Ok(())
+}
+
 impl GuardState {
     pub fn new(receiver: Pubkey, mint: Pubkey, guard_token_account: Pubkey) -> Self {
         Self {

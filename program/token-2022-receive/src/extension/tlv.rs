@@ -11,12 +11,17 @@ pub const TLV_TYPE_SIZE: usize = 2;
 pub const TLV_LENGTH_SIZE: usize = 2;
 pub const TLV_HEADER_SIZE: usize = TLV_TYPE_SIZE + TLV_LENGTH_SIZE;
 
-pub fn find_extension_offset(data: &[u8], extension_type: u16) -> Result<usize, ProgramError> {
-    if data.len() < ACCOUNT_SIZE + 1 {
-        return Err(ReceiveTokenError::InvalidAccountData.into());
-    }
-    if data[ACCOUNT_SIZE] != ACCOUNT_TYPE_ACCOUNT {
-        return Err(ReceiveTokenError::InvalidAccountData.into());
+/// Locate a TLV entry, returning `(value_offset, declared_len)`.
+///
+/// `PolicyNotEnabled` means the account simply carries no such extension (a plain 165-byte
+/// token account, or a TLV region that terminates without a match). Any other error means the
+/// data is **malformed** and must not be treated as "no policy" — see [`has_receive_policy`].
+pub fn find_extension_offset(
+    data: &[u8],
+    extension_type: u16,
+) -> Result<(usize, usize), ProgramError> {
+    if data.len() < ACCOUNT_SIZE + 1 || data[ACCOUNT_SIZE] != ACCOUNT_TYPE_ACCOUNT {
+        return Err(ReceiveTokenError::PolicyNotEnabled.into());
     }
     let mut cursor = ACCOUNT_SIZE + 1;
     while cursor + TLV_HEADER_SIZE <= data.len() {
@@ -30,7 +35,7 @@ pub fn find_extension_offset(data: &[u8], extension_type: u16) -> Result<usize, 
             return Err(ReceiveTokenError::InvalidAccountData.into());
         }
         if typ == extension_type {
-            return Ok(value_start);
+            return Ok((value_start, len));
         }
         if typ == 0 {
             break;
@@ -42,10 +47,13 @@ pub fn find_extension_offset(data: &[u8], extension_type: u16) -> Result<usize, 
 
 /// Copy out policy (TLV value may be unaligned after the 165-byte base).
 pub fn get_receive_policy(data: &[u8]) -> Result<ReceivePolicy, ProgramError> {
-    let offset = find_extension_offset(data, EXTENSION_TYPE_RECEIVE_POLICY)?;
-    let end = offset
-        .checked_add(core::mem::size_of::<ReceivePolicy>())
-        .ok_or(ReceiveTokenError::Overflow)?;
+    let (offset, len) = find_extension_offset(data, EXTENSION_TYPE_RECEIVE_POLICY)?;
+    // Honour the declared length: a shorter entry must not let the reader run into whatever
+    // bytes follow it in the account.
+    if len != core::mem::size_of::<ReceivePolicy>() {
+        return Err(ReceiveTokenError::InvalidAccountData.into());
+    }
+    let end = offset.checked_add(len).ok_or(ReceiveTokenError::Overflow)?;
     if end > data.len() {
         return Err(ReceiveTokenError::InvalidAccountData.into());
     }
@@ -54,8 +62,17 @@ pub fn get_receive_policy(data: &[u8]) -> Result<ReceivePolicy, ProgramError> {
     Ok(policy)
 }
 
-pub fn has_receive_policy(data: &[u8]) -> bool {
-    get_receive_policy(data).is_ok()
+/// `Ok(false)` only when the account genuinely carries no ReceivePolicy.
+///
+/// A malformed extension is an error, never a `false`: swallowing it would route the transfer
+/// down the no-policy path and credit the destination, silently bypassing the very policy the
+/// receiver attached.
+pub fn has_receive_policy(data: &[u8]) -> Result<bool, ProgramError> {
+    match get_receive_policy(data) {
+        Ok(_) => Ok(true),
+        Err(e) if e == ReceiveTokenError::PolicyNotEnabled.into() => Ok(false),
+        Err(e) => Err(e),
+    }
 }
 
 pub fn account_len_with_receive_policy() -> usize {
