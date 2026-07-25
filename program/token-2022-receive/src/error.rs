@@ -51,6 +51,10 @@ pub enum ReceiveTokenError {
     InvalidBondDestination,
     #[error("Unsupported extension combination")]
     UnsupportedExtension,
+    #[error("Guard custody is not transferable outside claim / expiry")]
+    GuardNotTransferable,
+    #[error("Source and destination must differ")]
+    SelfTransferForbidden,
 }
 
 impl From<ReceiveTokenError> for ProgramError {

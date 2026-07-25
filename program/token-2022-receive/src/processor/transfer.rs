@@ -131,6 +131,13 @@ pub fn process_transfer_checked(
     assert_guard_token_pda(guard_token, &dest_owner, &dest_mint, program_id)?;
     assert_guard_state_pda(guard_state, &dest_owner, &dest_mint, program_id)?;
 
+    // Defense in depth: the guard is never a transfer source. Unreachable while the guard's
+    // token-level owner is a PDA, but pinned here so an owner-field regression cannot silently
+    // re-open receipt minting against undeposited guard balance.
+    if source_info.key == guard_token.key || destination_info.key == guard_token.key {
+        return Err(ReceiveTokenError::GuardNotTransferable.into());
+    }
+
     let outcome = if policy_accepts {
         PolicyOutcome::Credited
     } else {
@@ -242,6 +249,11 @@ fn move_amount(
     amount: u64,
     authority_info: &AccountInfo,
 ) -> ProgramResult {
+    // Aliased source/destination would debit and credit the same buffer in two separate
+    // borrows and cancel to a silent no-op, which callers read as "the tokens moved".
+    if source_info.key == dest_info.key {
+        return Err(ReceiveTokenError::SelfTransferForbidden.into());
+    }
     {
         let mut source_data = source_info.try_borrow_mut_data()?;
         let mut source = unpack_account(&source_data)?;

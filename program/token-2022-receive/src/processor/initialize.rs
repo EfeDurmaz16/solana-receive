@@ -229,9 +229,13 @@ pub fn process_ensure_guard(program_id: &Pubkey, accounts: &[AccountInfo]) -> Pr
             &[payer.clone(), guard_token.clone(), system_program.clone()],
             &[seeds],
         )?;
+        // Held custody must NOT be spendable by the receiver — the receiver is exactly the
+        // party the guard protects senders against. The token-level owner is the guard_state
+        // PDA, which no external keypair can sign for, so the only debit paths are
+        // ClaimReceipt / CloseExpiredReceipt.
         let account = TokenAccount {
             mint: *mint.key,
-            owner: *receiver.key,
+            owner: *guard_state.key,
             amount: 0,
             delegate: COption::None,
             state: AccountState::Initialized,
