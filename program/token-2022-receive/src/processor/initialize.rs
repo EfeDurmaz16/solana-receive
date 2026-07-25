@@ -1,0 +1,281 @@
+use crate::constants::{ALLOWLIST_CAP, DEFAULT_RECEIPT_TTL_SLOTS};
+use crate::error::ReceiveTokenError;
+use crate::extension::receive_policy::{ReceivePolicy, SourceOwnerMode};
+use crate::extension::tlv::{
+    account_len_with_receive_policy, pack_account, unpack_account, write_receive_policy_tlv,
+};
+use crate::guard::{
+    assert_guard_state_pda, assert_guard_token_pda, derive_guard_state_address,
+    derive_guard_token_address, GuardState, GUARD_STATE_SIZE,
+};
+use crate::processor::require_signer;
+use crate::state::{AccountState, Mint, TokenAccount, ACCOUNT_SIZE, MINT_SIZE};
+use bytemuck::from_bytes_mut;
+use solana_program::{
+    account_info::{next_account_info, AccountInfo},
+    entrypoint::ProgramResult,
+    program::invoke_signed,
+    program_error::ProgramError,
+    program_option::COption,
+    program_pack::Pack,
+    pubkey::Pubkey,
+    rent::Rent,
+    system_instruction,
+    sysvar::Sysvar,
+};
+
+pub fn process_initialize_mint2(
+    accounts: &[AccountInfo],
+    decimals: u8,
+    mint_authority: Pubkey,
+    freeze_authority: Option<Pubkey>,
+) -> ProgramResult {
+    let account_info_iter = &mut accounts.iter();
+    let mint_info = next_account_info(account_info_iter)?;
+    let mut data = mint_info.try_borrow_mut_data()?;
+    if data.len() < MINT_SIZE {
+        return Err(ReceiveTokenError::InvalidAccountData.into());
+    }
+    let existing = Mint::unpack_from_slice(&data[..MINT_SIZE])?;
+    if existing.is_initialized() {
+        return Err(ReceiveTokenError::AlreadyInUse.into());
+    }
+    let mint = Mint {
+        mint_authority: COption::Some(mint_authority),
+        supply: 0,
+        decimals,
+        is_initialized: true,
+        freeze_authority: match freeze_authority {
+            Some(pk) => COption::Some(pk),
+            None => COption::None,
+        },
+    };
+    mint.pack_into_slice(&mut data[..MINT_SIZE]);
+    Ok(())
+}
+
+pub fn process_initialize_account3(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    owner: Pubkey,
+) -> ProgramResult {
+    let account_info_iter = &mut accounts.iter();
+    let account_info = next_account_info(account_info_iter)?;
+    let mint_info = next_account_info(account_info_iter)?;
+
+    if account_info.owner != program_id {
+        return Err(ProgramError::IncorrectProgramId);
+    }
+    if mint_info.owner != program_id {
+        return Err(ProgramError::IncorrectProgramId);
+    }
+
+    let mint_data = mint_info.try_borrow_data()?;
+    if mint_data.len() < MINT_SIZE {
+        return Err(ReceiveTokenError::InvalidAccountData.into());
+    }
+    let mint = Mint::unpack_from_slice(&mint_data[..MINT_SIZE])?;
+    if !mint.is_initialized() {
+        return Err(ReceiveTokenError::InvalidAccountData.into());
+    }
+
+    let mut data = account_info.try_borrow_mut_data()?;
+    if data.len() < ACCOUNT_SIZE {
+        return Err(ReceiveTokenError::InvalidAccountData.into());
+    }
+    let existing = TokenAccount::unpack_from_slice(&data[..ACCOUNT_SIZE])?;
+    if existing.is_initialized() {
+        return Err(ReceiveTokenError::AlreadyInUse.into());
+    }
+    let account = TokenAccount {
+        mint: *mint_info.key,
+        owner,
+        amount: 0,
+        delegate: COption::None,
+        state: AccountState::Initialized,
+        is_native: COption::None,
+        delegated_amount: 0,
+        close_authority: COption::None,
+    };
+    pack_account(&account, &mut data)?;
+    Ok(())
+}
+
+pub fn process_initialize_receive_policy(
+    accounts: &[AccountInfo],
+    min_amount: u64,
+    source_owner_mode: u8,
+    recovery_authority_mode: u8,
+    recovery_authority: Pubkey,
+    receipt_bond_lamports: u64,
+    receipt_ttl_slots: u64,
+    allowlist: Vec<Pubkey>,
+) -> ProgramResult {
+    let account_info_iter = &mut accounts.iter();
+    let token_account_info = next_account_info(account_info_iter)?;
+    let owner_info = next_account_info(account_info_iter)?;
+    require_signer(owner_info)?;
+
+    if allowlist.len() > ALLOWLIST_CAP {
+        return Err(ReceiveTokenError::AllowlistTooLarge.into());
+    }
+    let _ = SourceOwnerMode::Allowlist; // mode validated by accepts()
+
+    let mut data = token_account_info.try_borrow_mut_data()?;
+    let account = unpack_account(&data)?;
+    if account.owner != *owner_info.key {
+        return Err(ReceiveTokenError::OwnerMismatch.into());
+    }
+    if !account.is_initialized() {
+        return Err(ReceiveTokenError::InvalidAccountData.into());
+    }
+    if data.len() < account_len_with_receive_policy() {
+        return Err(ReceiveTokenError::InvalidAccountData.into());
+    }
+
+    let ttl = if receipt_ttl_slots == 0 {
+        DEFAULT_RECEIPT_TTL_SLOTS
+    } else {
+        receipt_ttl_slots
+    };
+
+    let mut policy = ReceivePolicy {
+        min_amount,
+        source_owner_mode,
+        recovery_authority_mode,
+        _padding: [0; 6],
+        recovery_authority,
+        receipt_bond_lamports,
+        receipt_ttl_slots: ttl,
+        allowlist_len: allowlist.len() as u8,
+        _padding2: [0; 7],
+        allowlist: [Pubkey::default(); ALLOWLIST_CAP],
+    };
+    for (i, pk) in allowlist.iter().enumerate() {
+        policy.allowlist[i] = *pk;
+    }
+
+    write_receive_policy_tlv(&mut data, &policy)?;
+    Ok(())
+}
+
+pub fn process_ensure_guard(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+    let account_info_iter = &mut accounts.iter();
+    let payer = next_account_info(account_info_iter)?;
+    let receiver = next_account_info(account_info_iter)?;
+    let mint = next_account_info(account_info_iter)?;
+    let guard_token = next_account_info(account_info_iter)?;
+    let guard_state = next_account_info(account_info_iter)?;
+    let system_program = next_account_info(account_info_iter)?;
+
+    require_signer(payer)?;
+    if *system_program.key != solana_program::system_program::id() {
+        return Err(ProgramError::IncorrectProgramId);
+    }
+
+    let (expected_guard, guard_bump) =
+        derive_guard_token_address(receiver.key, mint.key, program_id);
+    if guard_token.key != &expected_guard {
+        return Err(ReceiveTokenError::InvalidPda.into());
+    }
+    let (expected_state, state_bump) =
+        derive_guard_state_address(receiver.key, mint.key, program_id);
+    if guard_state.key != &expected_state {
+        return Err(ReceiveTokenError::InvalidPda.into());
+    }
+
+    let rent = Rent::get()?;
+
+    if guard_state.data_is_empty() {
+        let lamports = rent.minimum_balance(GUARD_STATE_SIZE);
+        let seeds: &[&[u8]] = &[
+            crate::constants::GUARD_STATE_SEED,
+            receiver.key.as_ref(),
+            mint.key.as_ref(),
+            &[state_bump],
+        ];
+        invoke_signed(
+            &system_instruction::create_account(
+                payer.key,
+                guard_state.key,
+                lamports,
+                GUARD_STATE_SIZE as u64,
+                program_id,
+            ),
+            &[payer.clone(), guard_state.clone(), system_program.clone()],
+            &[seeds],
+        )?;
+        let mut state_data = guard_state.try_borrow_mut_data()?;
+        let state = from_bytes_mut::<GuardState>(&mut state_data[..GUARD_STATE_SIZE]);
+        *state = GuardState::new(*receiver.key, *mint.key, *guard_token.key);
+    }
+
+    if guard_token.data_is_empty() {
+        let lamports = rent.minimum_balance(ACCOUNT_SIZE);
+        let seeds: &[&[u8]] = &[
+            crate::constants::GUARD_SEED,
+            receiver.key.as_ref(),
+            mint.key.as_ref(),
+            &[guard_bump],
+        ];
+        invoke_signed(
+            &system_instruction::create_account(
+                payer.key,
+                guard_token.key,
+                lamports,
+                ACCOUNT_SIZE as u64,
+                program_id,
+            ),
+            &[payer.clone(), guard_token.clone(), system_program.clone()],
+            &[seeds],
+        )?;
+        let account = TokenAccount {
+            mint: *mint.key,
+            owner: *receiver.key,
+            amount: 0,
+            delegate: COption::None,
+            state: AccountState::Initialized,
+            is_native: COption::None,
+            delegated_amount: 0,
+            close_authority: COption::None,
+        };
+        let mut gdata = guard_token.try_borrow_mut_data()?;
+        pack_account(&account, &mut gdata)?;
+    }
+
+    let _ = assert_guard_token_pda(guard_token, receiver.key, mint.key, program_id)?;
+    let _ = assert_guard_state_pda(guard_state, receiver.key, mint.key, program_id)?;
+    Ok(())
+}
+
+pub fn process_mint_to(accounts: &[AccountInfo], amount: u64) -> ProgramResult {
+    let account_info_iter = &mut accounts.iter();
+    let mint_info = next_account_info(account_info_iter)?;
+    let account_info = next_account_info(account_info_iter)?;
+    let authority_info = next_account_info(account_info_iter)?;
+    require_signer(authority_info)?;
+
+    let mut mint_data = mint_info.try_borrow_mut_data()?;
+    let mut mint = Mint::unpack_from_slice(&mint_data[..MINT_SIZE])?;
+    match mint.mint_authority {
+        COption::Some(auth) if auth == *authority_info.key => {}
+        _ => return Err(ReceiveTokenError::OwnerMismatch.into()),
+    }
+    mint.supply = mint
+        .supply
+        .checked_add(amount)
+        .ok_or(ReceiveTokenError::Overflow)?;
+    mint.pack_into_slice(&mut mint_data[..MINT_SIZE]);
+
+    let mut account_data = account_info.try_borrow_mut_data()?;
+    let mut account = unpack_account(&account_data)?;
+    if account.mint != *mint_info.key {
+        return Err(ReceiveTokenError::MintMismatch.into());
+    }
+    account.amount = account
+        .amount
+        .checked_add(amount)
+        .ok_or(ReceiveTokenError::Overflow)?;
+    pack_account(&account, &mut account_data)?;
+    Ok(())
+}

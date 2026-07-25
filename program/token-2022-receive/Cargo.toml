@@ -1,0 +1,27 @@
+[package]
+name = "token-2022-receive"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Token-2022-shaped reference program with destination receive-policy held delivery"
+readme = "README.md"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[features]
+no-entrypoint = []
+default = []
+
+[dependencies]
+arrayref = { workspace = true }
+bytemuck = { workspace = true }
+num_enum = { workspace = true }
+solana-program = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+bincode = { workspace = true }
+litesvm = "0.6.1"
+solana-program = { workspace = true }
+solana-sdk = "2.2"
