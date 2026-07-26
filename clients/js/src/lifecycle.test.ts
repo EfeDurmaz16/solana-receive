@@ -22,6 +22,7 @@ import {
   findGuardStatePda,
   findGuardTokenPda,
   findReceiptPda,
+  findReceiptPdaChecked,
   getClaimReceiptInstruction,
   getCloseExpiredReceiptInstruction,
   getEnsureGuardInstruction,
@@ -257,6 +258,12 @@ test("generated PDAs agree with the hand-written seed definitions", async () => 
     sourceOwner,
     uniqueNonce: nonce,
   });
+  const [checkedReceipt] = await findReceiptPdaChecked({
+    receiver,
+    mint,
+    sourceOwner,
+    uniqueNonce: nonce,
+  });
   const [handReceipt] = await deriveReceiptAddress(
     api,
     receiverBytes,
@@ -265,6 +272,15 @@ test("generated PDAs agree with the hand-written seed definitions", async () => 
     nonce,
   );
   assert.equal(genReceipt, handReceipt);
+  assert.equal(checkedReceipt, genReceipt);
+  assert.throws(() =>
+    findReceiptPdaChecked({
+      receiver,
+      mint,
+      sourceOwner,
+      uniqueNonce: new Uint8Array(31),
+    }),
+  );
 
   // The nonce must actually participate, or every hold would collide on one receipt address.
   const [other] = await findReceiptPda({

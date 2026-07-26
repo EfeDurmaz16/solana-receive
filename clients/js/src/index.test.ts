@@ -10,6 +10,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  DEFAULT_RECEIPT_TTL_SLOTS,
+  MAX_RECEIPT_BOND_LAMPORTS,
+  MAX_RECEIPT_TTL_SLOTS,
   NO_HELD_DELIVERY,
   ORIGINATOR_RECOVERY_ONLY,
   UNLIMITED_HELD_LIMITS,
@@ -33,6 +36,8 @@ import {
 
 const hex = (b: Uint8Array) =>
   Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+
+const U64_OVERFLOW = 1n << 64n;
 
 test("TransferChecked wire vector (Codama-backed)", () => {
   const nonce = new Uint8Array(32).fill(9);
@@ -77,6 +82,30 @@ test("TransferChecked wire vector (Codama-backed)", () => {
       decimals: 6,
       uniqueNonce: nonce,
       limits: { ...UNLIMITED_HELD_LIMITS, maxRecoveryMode: 3 },
+    }),
+  );
+  assert.throws(() =>
+    encodeTransferChecked({
+      amount: Number.MAX_SAFE_INTEGER + 1,
+      decimals: 6,
+      uniqueNonce: nonce,
+      limits: UNLIMITED_HELD_LIMITS,
+    }),
+  );
+  assert.throws(() =>
+    encodeTransferChecked({
+      amount: U64_OVERFLOW,
+      decimals: 6,
+      uniqueNonce: nonce,
+      limits: UNLIMITED_HELD_LIMITS,
+    }),
+  );
+  assert.throws(() =>
+    encodeTransferChecked({
+      amount: 1n,
+      decimals: 6,
+      uniqueNonce: nonce,
+      limits: { ...UNLIMITED_HELD_LIMITS, maxTtlSlots: Number.MAX_SAFE_INTEGER + 1 },
     }),
   );
 });
@@ -124,6 +153,45 @@ test("policy encoder rejects wrong-length keys and out-of-range modes", () => {
   assert.throws(() => encodeInitializeReceivePolicy({ ...base, sourceOwnerMode: -1 }));
   assert.throws(() => encodeInitializeReceivePolicy({ ...base, sourceOwnerMode: 1.5 }));
   assert.throws(() => encodeInitializeReceivePolicy({ ...base, recoveryAuthorityMode: NaN }));
+});
+
+test("policy encoder rejects unsafe u64s and protocol cap overflows", () => {
+  const ok = new Uint8Array(32);
+  const base = {
+    minAmount: 0n,
+    sourceOwnerMode: 0,
+    recoveryAuthorityMode: 0,
+    recoveryAuthority: ok,
+    receiptBondLamports: 0n,
+    receiptTtlSlots: 0n,
+    allowlist: [] as Uint8Array[],
+  };
+  assert.throws(() =>
+    encodeInitializeReceivePolicy({
+      ...base,
+      minAmount: Number.MAX_SAFE_INTEGER + 1,
+    }),
+  );
+  assert.throws(() =>
+    encodeInitializeReceivePolicy({
+      ...base,
+      receiptBondLamports: BigInt(MAX_RECEIPT_BOND_LAMPORTS) + 1n,
+    }),
+  );
+  assert.throws(() =>
+    encodeInitializeReceivePolicy({
+      ...base,
+      receiptTtlSlots: BigInt(MAX_RECEIPT_TTL_SLOTS) + 1n,
+    }),
+  );
+  assert.doesNotThrow(() =>
+    encodeInitializeReceivePolicy({
+      ...base,
+      // Zero is the explicit on-wire "use default" sentinel; validate the default, encode zero.
+      receiptTtlSlots: 0n,
+    }),
+  );
+  assert.ok(DEFAULT_RECEIPT_TTL_SLOTS <= MAX_RECEIPT_TTL_SLOTS);
 });
 
 test("allowlist wire vector pins the variable-length field", () => {
@@ -245,6 +313,60 @@ test("ReceivePolicy account layout vector, shared with wire_vectors.rs", () => {
   assert.throws(() => decodeReceivePolicy(corrupt));
 });
 
+test("decodeReceivePolicy rejects foreign TLVs before, after, and without policy", () => {
+  const put = (data: Uint8Array, offset: number, h: string) => {
+    for (let i = 0; i < h.length / 2; i++) {
+      data[offset + i] = parseInt(h.slice(i * 2, i * 2 + 2), 16);
+    }
+  };
+  const writePolicy = (data: Uint8Array, offset: number) => {
+    put(
+      data,
+      offset,
+      "1027" +
+        "4801" +
+        "0000000000000000" +
+        "00" +
+        "00" +
+        "000000000000" +
+        "00".repeat(32) +
+        "0000000000000000" +
+        "4012170000000000" +
+        "00" +
+        "00000000000000" +
+        "00".repeat(8 * 32),
+    );
+  };
+  const writeForeign = (data: Uint8Array, offset: number) => {
+    data[offset] = 0x2a;
+    data[offset + 1] = 0x00;
+    data[offset + 2] = 0x00;
+    data[offset + 3] = 0x00;
+  };
+
+  const policyOnly = new Uint8Array(498);
+  policyOnly[165] = 2;
+  writePolicy(policyOnly, 166);
+  assert.ok(decodeReceivePolicy(policyOnly));
+
+  const foreignBefore = new Uint8Array(502);
+  foreignBefore[165] = 2;
+  writeForeign(foreignBefore, 166);
+  writePolicy(foreignBefore, 170);
+  assert.throws(() => decodeReceivePolicy(foreignBefore), /unsupported account extension type/);
+
+  const foreignAfter = new Uint8Array(502);
+  foreignAfter[165] = 2;
+  writePolicy(foreignAfter, 166);
+  writeForeign(foreignAfter, 498);
+  assert.throws(() => decodeReceivePolicy(foreignAfter), /unsupported account extension type/);
+
+  const foreignOnly = new Uint8Array(170);
+  foreignOnly[165] = 2;
+  writeForeign(foreignOnly, 166);
+  assert.throws(() => decodeReceivePolicy(foreignOnly), /unsupported account extension type/);
+});
+
 test("previewOutcome tells a sender what will happen before paying", () => {
   const sender = new Uint8Array(32).fill(0x11);
   const stranger = new Uint8Array(32).fill(0x22);
@@ -282,6 +404,49 @@ test("previewOutcome tells a sender what will happen before paying", () => {
       rentExemptReceiptLamports: rent,
     }),
     "credited",
+  );
+  assert.equal(preview(50n, sender, { ...UNLIMITED_HELD_LIMITS, maxBondLamports: 1n }), "failed");
+  assert.throws(() =>
+    previewOutcome({
+      policy,
+      amount: Number.MAX_SAFE_INTEGER + 1,
+      sourceOwner: sender,
+      limits: UNLIMITED_HELD_LIMITS,
+      rentExemptReceiptLamports: rent,
+    }),
+  );
+});
+
+test("previewOutcome fails closed on unknown policy modes", () => {
+  const sender = new Uint8Array(32).fill(0x11);
+  const base = {
+    minAmount: 100n,
+    sourceOwnerMode: 1,
+    recoveryAuthorityMode: 0,
+    recoveryAuthority: new Uint8Array(32),
+    receiptBondLamports: 7n,
+    receiptTtlSlots: 1_512_000n,
+    allowlist: [sender],
+  };
+  assert.equal(
+    previewOutcome({
+      policy: { ...base, sourceOwnerMode: 2 },
+      amount: 150n,
+      sourceOwner: sender,
+      limits: UNLIMITED_HELD_LIMITS,
+      rentExemptReceiptLamports: 2_400_000n,
+    }),
+    "failed",
+  );
+  assert.equal(
+    previewOutcome({
+      policy: { ...base, recoveryAuthorityMode: 3 },
+      amount: 50n,
+      sourceOwner: sender,
+      limits: UNLIMITED_HELD_LIMITS,
+      rentExemptReceiptLamports: 2_400_000n,
+    }),
+    "failed",
   );
 });
 
