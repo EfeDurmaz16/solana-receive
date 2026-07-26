@@ -48,7 +48,42 @@ function fillSuccess(data) {
     finished.title = data.finishedAt;
   }
 
-  for (const step of steps) step.classList.add("is-done");
+  const explorers = data.explorers || {};
+  for (const a of document.querySelectorAll("[data-link]")) {
+    const key = a.dataset.link;
+    const href = explorers[key] || data.before?.explorer;
+    if (href && (key !== "before" || data.before?.ok)) {
+      a.href = href;
+      a.hidden = false;
+    } else {
+      a.removeAttribute("href");
+      a.hidden = true;
+    }
+  }
+
+  const beforeStep = document.querySelector('[data-step="before"]');
+  if (beforeStep) {
+    beforeStep.hidden = !(data.before && data.before.ok);
+  }
+
+  const headline = document.getElementById("headline");
+  const lede = document.getElementById("lede");
+  const isDevnet = data.cluster === "devnet";
+  if (headline) {
+    headline.textContent = isDevnet
+      ? "Devnet before/after receive"
+      : "Held delivery on a custom program";
+  }
+  if (lede) {
+    lede.textContent = isDevnet
+      ? "Real Devnet txs: ordinary SPL always-credits vs receive-policy credited → held → claim/expiry. Not canonical Token-2022. Not legacy USDC."
+      : "Local Surfpool demo of credited, held, claim, and expiry. Not canonical Token-2022. Not legacy USDC.";
+  }
+
+  for (const step of steps) {
+    if (step.hidden) continue;
+    step.classList.add("is-done");
+  }
 
   const localNote =
     data.usedLocalProgramId === true
@@ -56,9 +91,16 @@ function fillSuccess(data) {
       : data.usedLocalProgramId === false
         ? " Declared program ID."
         : "";
-  status.textContent = `Successful Surfpool evidence from ${data.finishedAt}.${localNote}`;
+  const where = isDevnet ? "Devnet" : "Surfpool";
+  status.textContent = `Successful ${where} evidence from ${data.finishedAt}.${localNote}`;
   status.classList.add("is-ready");
   status.classList.remove("is-bad");
+
+  const run = document.getElementById("run");
+  if (run && isDevnet) {
+    run.innerHTML =
+      "From the repo root: <code>./scripts/devnet-lifecycle.sh</code> then serve the UI: <code>python3 -m http.server 8765 --directory demos/receive</code>";
+  }
 }
 
 function fillInvalid(reason) {

@@ -16,32 +16,51 @@
     <div class="atmosphere" aria-hidden="true"></div>
     <main class="stage">
       <p class="brand">solana-receive</p>
-      <h1 class="headline">Held delivery on a custom program</h1>
-      <p class="lede">
+      <h1 class="headline" id="headline">Held delivery on a custom program</h1>
+      <p class="lede" id="lede">
         Local Surfpool demo of credited, held, claim, and expiry. Not canonical
         Token-2022. Not legacy USDC.
       </p>
 
       <ol class="path" id="path">
+        <li data-step="before" hidden>
+          <span class="step-label">Before</span>
+          <span class="step-value">
+            ordinary SPL ·
+            <a data-link="before" href="#" target="_blank" rel="noopener">explorer</a>
+          </span>
+        </li>
         <li data-step="policy">
           <span class="step-label">Policy</span>
           <span class="step-value" data-field="destination">—</span>
         </li>
         <li data-step="credited">
           <span class="step-label">Credited</span>
-          <span class="step-value"><span data-field="destBalance">—</span> to destination</span>
+          <span class="step-value">
+            <span data-field="destBalance">—</span> to destination ·
+            <a data-link="credited" href="#" target="_blank" rel="noopener">explorer</a>
+          </span>
         </li>
         <li data-step="held">
           <span class="step-label">Held</span>
-          <span class="step-value" data-field="guardToken">guard shard</span>
+          <span class="step-value">
+            <span data-field="guardToken">guard shard</span> ·
+            <a data-link="held" href="#" target="_blank" rel="noopener">explorer</a>
+          </span>
         </li>
         <li data-step="claim">
           <span class="step-label">Claim</span>
-          <span class="step-value"><span data-field="claimBalance">—</span> recovered</span>
+          <span class="step-value">
+            <span data-field="claimBalance">—</span> recovered ·
+            <a data-link="claim" href="#" target="_blank" rel="noopener">explorer</a>
+          </span>
         </li>
         <li data-step="expiry">
           <span class="step-label">Expiry</span>
-          <span class="step-value">TTL close returns to source</span>
+          <span class="step-value">
+            TTL close returns to source ·
+            <a data-link="expiry" href="#" target="_blank" rel="noopener">explorer</a>
+          </span>
         </li>
       </ol>
 
@@ -58,7 +77,7 @@
 
       <p class="status" id="status" role="status">Waiting for <code>last-run.json</code>…</p>
 
-      <p class="run">
+      <p class="run" id="run">
         From the repo root:
         <code>./scripts/surfpool-lifecycle.sh</code>
         then serve the UI:

@@ -13,7 +13,7 @@ Honest local demo of the receive-policy lifecycle over **Surfpool RPC**, driven 
 Surfpool CLI **v1.5.0** (hard requirement; mismatch aborts).
 For Agave 4.1.1 and Node 22+ setup, start with [docs/OPERATOR.md](../../docs/OPERATOR.md).
 
-## Run
+## Run (Surfpool)
 
 ```bash
 # once: install Surfpool v1.5.0 onto PATH (example: darwin-arm64)
@@ -33,3 +33,21 @@ artifact only after credited / held / claim / expiry post-conditions pass (`ok: 
 
 If the local deploy keypair differs from `declare_id!` (`GyrTVV4h…`), the lifecycle script sets
 `RECEIVE_PROGRAM_ID` automatically. Matching the declared ID requires the keypair for that pubkey.
+
+## Run (Devnet)
+
+Funded wallet required (faucet / transfer). Build + deploy the `.so`, then:
+
+```bash
+cargo build-sbf --manifest-path program/token-2022-receive/Cargo.toml
+solana program deploy target/deploy/token_2022_receive.so \
+  --program-id target/deploy/token_2022_receive-keypair.json \
+  --url https://api.devnet.solana.com
+
+./scripts/devnet-lifecycle.sh
+python3 -m http.server 8765 --directory demos/receive
+```
+
+`devnet-lifecycle.sh` also sends an ordinary SPL Tokenkeg transfer (before / always-credits), then
+receive-policy credited → held → claim → expiry (waits on real slots; no Surfpool time-travel).
+Explorer links for each step are written into `last-run.json`.
