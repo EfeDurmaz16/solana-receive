@@ -11,7 +11,6 @@ Honest local demo of the receive-policy lifecycle over **Surfpool RPC**, driven 
 ## Pin
 
 Surfpool CLI **v1.5.0** (hard requirement; mismatch aborts).
-For Agave 4.1.1 and Node 22+ setup, start with [docs/OPERATOR.md](../../docs/OPERATOR.md).
 
 ## Run
 

@@ -11,9 +11,7 @@
 - [ ] Maintainers agree the layer is canonical Token-2022 (and/or name the runtime piece).
 - [x] Reference program demonstrates `credited` and `held` without breaking no-policy transfers.
 - [~] Differential vs upstream: **layout + no-policy amount overlap** in-tree (`upstream_differential`); **not** full `TokenzQd` execution parity — do not check this gate as done for SIMD.
-- [x] Measured account count, transaction footprint, and CU ceilings published ([VERIFICATION](../VERIFICATION.md)).
-- [x] Writable-lock structure documented and regression-checked (distinct shards share no writable guard account).
-- [ ] Runtime contention / throughput measured under a real scheduler; LiteSVM does not model bank locks.
+- [x] Measured account count, tx size, CU ceilings, and writable-lock analysis published ([VERIFICATION](../VERIFICATION.md)).
 - [x] Wire surface frozen for clients ([WIRE](../WIRE.md)); Kit/Codama client in `clients/js`.
 - [ ] Canonical open questions reduced (mint allow-flag, account-resolution shape) — see [decision-request.md](./decision-request.md).
 

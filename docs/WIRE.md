@@ -46,14 +46,6 @@ Trailing bytes after a complete body are rejected (`InvalidInstruction`).
 | `ClaimReceipt` | 7 — `receipt(w)`, `guard_token(w)`, `guard_state(w)`, `claim_destination(w)`, `mint`, `claim_authority(signer)`, `bond_dest(w)` |
 | `CloseExpiredReceipt` | 6 — `receipt(w)`, `guard_token(w)`, `guard_state(w)`, `source_owner_token(w)`, `mint`, `bond_dest(w)` |
 
-Notes:
-
-- `ClaimReceipt.claim_authority` is the recorded recovery key for the receipt's recovery mode:
-  `source_owner` for `Originator`, `receiver_owner` for `Receiver`, or the policy's explicit
-  third-party key for `ThirdParty`.
-- `system_program` is present only on policy `TransferChecked` (9 accounts) and `EnsureGuard`.
-  Four-account `TransferChecked`, `ClaimReceipt`, and `CloseExpiredReceipt` do not take it.
-
 ## PDAs
 
 | Account | Seeds |

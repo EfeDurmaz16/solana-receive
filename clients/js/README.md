@@ -34,11 +34,11 @@ the wrong slots.
 
 ```bash
 # From repo root: regenerate after IDL edits
-npm ci
+npm install
 npm run codegen
 
 cd clients/js
-npm ci
+npm install
 npm run typecheck
 npm test
 ```
@@ -80,7 +80,6 @@ declare const receiver: ReturnType<typeof address>;
 declare const sourceOwner: ReturnType<typeof address>;
 declare const owner: ReturnType<typeof createNoopSigner>;
 declare const authority: ReturnType<typeof createNoopSigner>;
-declare const sourceOwnerSigner: ReturnType<typeof createNoopSigner>; // address == sourceOwner
 declare const payer: ReturnType<typeof createNoopSigner>;
 declare const bondPayer: ReturnType<typeof createNoopSigner>;
 
@@ -112,20 +111,13 @@ getEnsureGuardInstruction({
 // 3) Sender: read terms, preview, then transfer.
 const policy = decodeReceivePolicy(/* destination account data */);
 const rentExemptReceiptLamports = /* connection.getMinimumBalanceForRentExemption(RECEIPT_SIZE) */;
-const creditedPreview = previewOutcome({
-  policy,
-  amount: 150n,
-  sourceOwner,
-  limits: UNLIMITED_HELD_LIMITS,
-  rentExemptReceiptLamports,
-}); // credited
-const heldPreview = previewOutcome({
+const outcome = previewOutcome({
   policy,
   amount: 50n,
-  sourceOwner,
+  sourceOwner: /* 32-byte pubkey */,
   limits: UNLIMITED_HELD_LIMITS, // or NO_HELD_DELIVERY to refuse holds
   rentExemptReceiptLamports,
-}); // held
+});
 
 const uniqueNonce = crypto.getRandomValues(new Uint8Array(32));
 const [receipt] = await findReceiptPda({
@@ -135,20 +127,7 @@ const [receipt] = await findReceiptPda({
   uniqueNonce,
 });
 
-// No policy / self-transfer: omit guard* / receipt / bondPayer / systemProgram (4 accounts).
-const ordinaryIx = getTransferCheckedInstruction({
-  source,
-  mint,
-  destination,
-  authority,
-  amount: 50n,
-  decimals: 6,
-  uniqueNonce: Array.from(uniqueNonce),
-  maxBondLamports: UNLIMITED_HELD_LIMITS.maxBondLamports,
-  maxTtlSlots: UNLIMITED_HELD_LIMITS.maxTtlSlots,
-  maxRecoveryMode: UNLIMITED_HELD_LIMITS.maxRecoveryMode,
-});
-
+// No policy / self-transfer: omit guard* / receipt / bondPayer (4 accounts).
 // Policy destination: pass all nine.
 const ix = getTransferCheckedInstruction({
   source,
@@ -178,7 +157,7 @@ getClaimReceiptInstruction({
   guardState,
   claimDestination: /* same-mint token account */,
   mint,
-  claimAuthority: sourceOwnerSigner, // Originator mode: recorded sourceOwner signer
+  claimAuthority: authority,
   bondDest: bondPayer.address, // must be the recorded bond payer
 });
 
@@ -193,9 +172,7 @@ getCloseExpiredReceiptInstruction({
 });
 
 void TOKEN2022_RECEIVE_PROGRAM_ADDRESS;
-void creditedPreview;
-void heldPreview;
-void ordinaryIx;
+void outcome;
 void ix;
 void NO_HELD_DELIVERY;
 void RECEIPT_SIZE;
