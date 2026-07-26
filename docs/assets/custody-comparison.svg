@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 -16 932 452" width="932" height="452" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#71717A"/>
+    </marker>
+    <marker id="r2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#DC2626"/>
+    </marker>
+    <style>
+      .b  { rx:8; stroke-width:1.5; }
+      .n  { fill:#F4F4F5; stroke:#A1A1AA; }
+      .p  { fill:#FFFFFF; stroke:#D4D4D8; }
+      .hd { fill:#FEF3C7; stroke:#D97706; }
+      .no { fill:#FEE2E2; stroke:#DC2626; }
+      .ok { fill:#DCFCE7; stroke:#16A34A; }
+      .t  { font-size:14px; fill:#18181B; }
+      .ts { font-size:12px; fill:#3F3F46; }
+      .lb { font-size:12px; fill:#71717A; }
+      .rl { font-size:12px; font-weight:600; fill:#DC2626; }
+      .h  { font-size:15px; font-weight:600; fill:#18181B; }
+      .l  { stroke:#71717A; stroke-width:1.5; fill:none; marker-end:url(#a2); }
+      .ld { stroke:#DC2626; stroke-width:1.5; fill:none; marker-end:url(#r2); stroke-dasharray:5 3; }
+      .x  { stroke:#DC2626; stroke-width:2.5; }
+    </style>
+  </defs>
+
+  <text x="0" y="14" class="h">Who can move escrowed value</text>
+
+  <rect x="0" y="34" width="430" height="366" class="b p"/>
+  <text x="22" y="64" class="h">Vault, sRFC 40</text>
+  <text x="22" y="86" class="lb">Depositor trusts the vault operator</text>
+
+  <rect x="30" y="112" width="150" height="44" class="b n"/>
+  <text x="105" y="139" text-anchor="middle" class="t">Payer</text>
+  <path class="l" d="M180,134 L235,134"/>
+  <rect x="240" y="112" width="160" height="44" class="b hd"/>
+  <text x="320" y="139" text-anchor="middle" class="t">pending_vault</text>
+
+  <rect x="240" y="222" width="160" height="44" class="b n"/>
+  <text x="320" y="249" text-anchor="middle" class="t">Vault authority</text>
+  <path class="l" d="M320,222 L320,162"/>
+  <text x="332" y="196" class="lb">approve, reject</text>
+
+  <path class="ld" d="M240,244 L120,244 L120,308"/>
+  <rect x="30" y="308" width="370" height="66" class="b no"/>
+  <text x="215" y="335" text-anchor="middle" class="t">WithdrawAssets</text>
+  <text x="215" y="356" text-anchor="middle" class="ts">the same authority can pull assets out</text>
+
+  <rect x="470" y="34" width="430" height="366" class="b p"/>
+  <text x="492" y="64" class="h">Receive terms, this proposal</text>
+  <text x="492" y="86" class="lb">Receiver is modelled as the adversary</text>
+
+  <rect x="500" y="112" width="150" height="44" class="b n"/>
+  <text x="575" y="139" text-anchor="middle" class="t">Payer</text>
+  <path class="l" d="M650,134 L705,134"/>
+  <rect x="710" y="112" width="160" height="44" class="b hd"/>
+  <text x="790" y="139" text-anchor="middle" class="t">guard vault</text>
+
+  <rect x="710" y="222" width="160" height="44" class="b n"/>
+  <text x="790" y="249" text-anchor="middle" class="t">Receiver</text>
+  <path class="ld" d="M790,222 L790,168"/>
+  <line class="x" x1="782" y1="188" x2="798" y2="204"/>
+  <line class="x" x1="798" y1="188" x2="782" y2="204"/>
+  <text x="700" y="199" text-anchor="middle" class="rl">no path</text>
+
+  <rect x="500" y="308" width="370" height="66" class="b ok"/>
+  <text x="685" y="335" text-anchor="middle" class="t">Owner is a program-derived address</text>
+  <text x="685" y="356" text-anchor="middle" class="ts">no keypair exists, so no one can sign for it</text>
+
+  <path class="l" d="M870,156 L886,156 L886,290 L685,290 L685,306"/>
+</svg>

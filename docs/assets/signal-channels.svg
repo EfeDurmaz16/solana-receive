@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 -16 932 432" width="932" height="432" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, sans-serif">
+  <style>
+    .b  { rx:8; stroke-width:1.5; }
+    .p  { fill:#FFFFFF; stroke:#D4D4D8; }
+    .no { fill:#FEE2E2; stroke:#DC2626; }
+    .ok { fill:#DCFCE7; stroke:#16A34A; }
+    .t  { font-size:14px; fill:#18181B; }
+    .ts { font-size:12.5px; fill:#3F3F46; }
+    .lb { font-size:12px; fill:#71717A; }
+    .h  { font-size:15px; font-weight:600; fill:#18181B; }
+    .hh { font-size:13px; font-weight:600; fill:#52525B; letter-spacing:0.4px; }
+    .bad{ font-size:12px; font-weight:600; fill:#991B1B; }
+    .gd { font-size:12px; font-weight:600; fill:#14532D; }
+  </style>
+
+  <text x="20" y="28" class="h">Can a hostile payer defeat this channel?</text>
+  <text x="20" y="48" class="lb">The payer is the adversary a receive policy exists to defend against, so every channel is judged against them.</text>
+
+  <text x="36" y="84" class="hh">CHANNEL</text>
+  <text x="250" y="84" class="hh">ATTACK AVAILABLE TO THE PAYER</text>
+  <text x="726" y="84" class="hh">VERDICT</text>
+  <line x1="20" y1="94" x2="880" y2="94" stroke="#D4D4D8" stroke-width="1"/>
+
+  <rect x="20" y="108" width="200" height="76" class="b p"/>
+  <text x="36" y="136" class="t">Return data</text>
+  <text x="36" y="158" class="lb">set_return_data</text>
+  <text x="36" y="174" class="lb">one byte, 0 or 1</text>
+
+  <rect x="240" y="108" width="450" height="76" class="b p"/>
+  <text x="256" y="136" class="ts">Return data is transaction-scoped, not instruction-scoped.</text>
+  <text x="256" y="156" class="ts">Append any instruction after the transfer and it overwrites.</text>
+  <text x="256" y="176" class="ts">meta.returnData reflects the last writer, not the payment.</text>
+
+  <rect x="710" y="108" width="170" height="76" class="b no"/>
+  <text x="795" y="142" text-anchor="middle" class="bad">FORGEABLE</text>
+  <text x="795" y="164" text-anchor="middle" class="lb">cost: one instruction</text>
+
+  <rect x="20" y="196" width="200" height="76" class="b p"/>
+  <text x="36" y="224" class="t">Program logs</text>
+  <text x="36" y="246" class="lb">Outcome: held</text>
+  <text x="36" y="262" class="lb">plus receipt pubkey</text>
+
+  <rect x="240" y="196" width="450" height="76" class="b p"/>
+  <text x="256" y="224" class="ts">The per-transaction log buffer is bounded. Pad the transaction</text>
+  <text x="256" y="244" class="ts">and the outcome line is dropped. Any program in the same</text>
+  <text x="256" y="264" class="ts">transaction can also emit a byte-identical line.</text>
+
+  <rect x="710" y="196" width="170" height="76" class="b no"/>
+  <text x="795" y="228" text-anchor="middle" class="bad">DROPPABLE</text>
+  <text x="795" y="248" text-anchor="middle" class="bad">AND FORGEABLE</text>
+  <text x="795" y="266" text-anchor="middle" class="lb">cost: padding</text>
+
+  <rect x="20" y="284" width="200" height="76" class="b p"/>
+  <text x="36" y="312" class="t">Balance delta</text>
+  <text x="36" y="334" class="lb">destination token</text>
+  <text x="36" y="350" class="lb">account, pre vs post</text>
+
+  <rect x="240" y="284" width="450" height="76" class="b p"/>
+  <text x="256" y="312" class="ts">Written only by the token program, recorded by the runtime in</text>
+  <text x="256" y="332" class="ts">pre and post token balances. A payer cannot pad it away and</text>
+  <text x="256" y="352" class="ts">cannot write it from a program of their own.</text>
+
+  <rect x="710" y="284" width="170" height="76" class="b ok"/>
+  <text x="795" y="318" text-anchor="middle" class="gd">AUTHORITATIVE</text>
+  <text x="795" y="340" text-anchor="middle" class="lb">the normative rule</text>
+</svg>

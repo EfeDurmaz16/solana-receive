@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 -16 932 492" width="932" height="492" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#71717A"/>
+    </marker>
+    <style>
+      .b  { rx:8; stroke-width:1.5; }
+      .n  { fill:#F4F4F5; stroke:#A1A1AA; }
+      .hd { fill:#FEF3C7; stroke:#D97706; }
+      .ex { fill:#FFFFFF; stroke:#71717A; stroke-dasharray:5 3; }
+      .t  { font-size:13.5px; font-weight:600; fill:#18181B; }
+      .ts { font-size:11.5px; fill:#3F3F46; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .lb { font-size:12px; fill:#71717A; }
+      .h  { font-size:15px; font-weight:600; fill:#18181B; }
+      .l  { stroke:#71717A; stroke-width:1.5; fill:none; marker-end:url(#a4); }
+    </style>
+  </defs>
+
+  <text x="20" y="28" class="h">Accounts and PDA seeds</text>
+  <text x="20" y="48" class="lb">receiver throughout is the destination token account's owner, never the token account address.</text>
+
+  <rect x="20" y="72" width="250" height="66" class="b n"/>
+  <text x="36" y="98" class="t">ReceiveTerms, specific</text>
+  <text x="36" y="120" class="ts">["receive-terms", token_account]</text>
+
+  <rect x="20" y="156" width="250" height="66" class="b n"/>
+  <text x="36" y="182" class="t">ReceiveTerms, default</text>
+  <text x="36" y="204" class="ts">["receive-terms", owner, mint]</text>
+
+  <path class="l" d="M60,138 L60,156"/>
+  <text x="78" y="152" class="lb">falls back to</text>
+
+  <rect x="330" y="114" width="230" height="66" class="b ex"/>
+  <text x="346" y="140" class="t">policy_program</text>
+  <text x="346" y="162" class="ts">can_credit, external</text>
+
+  <path class="l" d="M270,105 L300,105 L300,147 L330,147"/>
+  <path class="l" d="M270,189 L300,189 L300,147"/>
+
+  <rect x="630" y="72" width="250" height="66" class="b hd"/>
+  <text x="646" y="98" class="t">Guard token account</text>
+  <text x="646" y="120" class="ts">["guard", owner, mint]</text>
+
+  <rect x="630" y="156" width="250" height="66" class="b n"/>
+  <text x="646" y="182" class="t">GuardState, 128 bytes</text>
+  <text x="646" y="204" class="ts">["guard-state", owner, mint]</text>
+
+  <path class="l" d="M755,156 L755,138"/>
+  <text x="770" y="150" class="lb">owns and backs</text>
+
+  <rect x="630" y="264" width="250" height="84" class="b n"/>
+  <text x="646" y="290" class="t">Receipt, 304 bytes</text>
+  <text x="646" y="312" class="ts">["receipt", owner, mint,</text>
+  <text x="646" y="330" class="ts">  source_owner, unique_nonce]</text>
+
+  <path class="l" d="M700,222 L700,264"/>
+  <text x="612" y="248" class="lb">held_amount covers</text>
+
+  <rect x="330" y="264" width="230" height="84" class="b n"/>
+  <text x="346" y="290" class="t">Destination token account</text>
+  <text x="346" y="312" class="ts">ordinary Token-2022 ATA</text>
+  <text x="346" y="330" class="ts">unchanged when held</text>
+
+  <path class="l" d="M560,306 L630,306"/>
+  <text x="595" y="298" text-anchor="middle" class="lb">refused</text>
+
+  <rect x="20" y="264" width="250" height="84" class="b n"/>
+  <text x="36" y="290" class="t">Sender</text>
+  <text x="36" y="312" class="ts">resolves terms, declares</text>
+  <text x="36" y="330" class="ts">HeldLimits, picks the nonce</text>
+
+  <path class="l" d="M270,306 L330,306"/>
+
+  <text x="20" y="392" class="lb">Custody shards at (owner, mint), so two token accounts owned by the same wallet for the same mint share one guard</text>
+  <text x="20" y="412" class="lb">and one receipt namespace, even when they carry different account-specific terms. Terms are policy and belong to the</text>
+  <text x="20" y="432" class="lb">account; custody is a recovery unit and belongs to the wallet.</text>
+</svg>
