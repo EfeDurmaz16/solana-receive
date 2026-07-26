@@ -158,16 +158,6 @@ otherwise have reported `credited` for it. Guards are recognised in constant tim
 ordinary path, because `EnsureGuard` records the shard's receiver in the otherwise unused
 `close_authority` field as a marker and nothing else in this program ever sets one.
 
-```mermaid
-flowchart LR
-  S[Source token account] -->|policy rejects| G[Guard token PDA]
-  G -->|claim full amount| C[Claim destination\nsame mint]
-  G -->|expiry refund| E[Source-owner token account\nsame mint]
-  GS[GuardState PDA\nheld_amount] -.asserts custody.-> G
-  R[Receipt PDA\namount + recovery mode + expires_slot] -.authorizes.-> C
-  R -.authorizes after TTL.-> E
-```
-
 **Layout versions and upgrade scope.** `GuardState` and `Receipt` each carry a `version`,
 checked on load. Without one a future field addition is detectable only as a length error, and a
 same-size change is not detectable at all, so live accounts would be silently reinterpreted.
@@ -273,7 +263,8 @@ destination owner is hostile.
 
 | Risk | Status |
 | --- | --- |
-| A hostile destination can still *route* an ordinary transfer into held custody by publishing an unsatisfiable write-once policy. Recovery is guaranteed (claim or expiry, both bounded), but the sender's funds are delayed, and under `Receiver` / `ThirdParty` recovery the destination decides who claims. A sender that reads the terms (`decodeReceivePolicy`, `previewOutcome`) can decline with `HeldLimits::no_hold()`; a sender that reads nothing and passes `unlimited()` accepts whatever the destination wrote. **Senders must read the outcome byte, not just transaction success.** | By design; bounded by sender-declared limits and the TTL cap |
+| A hostile destination can still *route* an ordinary transfer into held custody by setting an unsatisfiable policy. Recovery is guaranteed (claim or expiry, both bounded), but the sender's funds are delayed, and under `Receiver` / `ThirdParty` recovery the destination decides who claims. **Senders must read the outcome byte, not just transaction success.** | By design; bounded by the TTL cap |
+| A destination can still *route* a transfer into held custody by publishing an unsatisfiable policy. The policy is write-once, so a sender that reads it (`decodeReceivePolicy`, `previewOutcome` in the JS client) sees terms that cannot change, and declines with `HeldLimits::no_hold()`. A sender that reads nothing and passes `unlimited()` accepts whatever the destination wrote. | Mitigated; the remainder is an explicit sender choice |
 | Throughput under a real scheduler is unmeasured. The account-lock structure is asserted (distinct shards share no writable account, `cu_ceilings::distinct_shards_share_no_writable_account`), but LiteSVM does not model bank locks. | Structure verified, throughput not |
 
 ## 11. Proposal path

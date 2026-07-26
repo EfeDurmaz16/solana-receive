@@ -5,7 +5,7 @@
 **Related:** [srfc-receive-policy-held-delivery.md](./srfc-receive-policy-held-delivery.md), [maintainer-discussion.md](./maintainer-discussion.md), [../SPEC.md](../SPEC.md)  
 **Repo:** https://github.com/EfeDurmaz16/solana-receive
 
-This repository is a **custom program ID reference** inspired by Token-2022 layouts and transfer semantics. It is **not** a drop-in `TokenzQd…` binary and is **not wire-compatible** with upstream instruction discriminators (see `upstream_differential`).
+This repository is a **greenfield custom program ID reference** inspired by Token-2022 layouts and transfer semantics. It is **not** a drop-in `TokenzQd…` binary and is **not wire-compatible** with upstream instruction discriminators (see `upstream_differential`).
 
 Please decide the four items below. Until they are settled, the working path remains: **sRFC + this custom program ID**.
 
@@ -36,11 +36,11 @@ Policy-enabled `TransferChecked` uses **9** accounts (4 base + guard_token, guar
 
 ---
 
-## 3. Custom reference vs upstream fork
+## 3. Greenfield reference vs upstream fork
 
 | Option | Meaning |
 | --- | --- |
-| **A (this repo)** | Keep a Token-2022-**shaped** custom program ID reference |
+| **A (this repo)** | Keep a greenfield / Token-2022-**shaped** custom program ID as the scientific deliverable |
 | B | Rebase onto a true `solana-program/token-2022` fork aiming at upstream merge |
 | C | Research-only; no path to canonical Token-2022 |
 
@@ -57,11 +57,6 @@ Policy-enabled `TransferChecked` uses **9** accounts (4 base + guard_token, guar
 
 **Ask:** Confirm whether held delivery belongs in canonical Token-2022 / runtime at all. If no, choose A/C and stop.
 
-Ask 3 and Ask 4 are coupled: if maintainers encourage an upstream path in Ask 3,
-Ask 4 decides whether that path needs a SIMD; if maintainers decline canonical
-Token-2022 / runtime scope in Ask 4, Ask 3 collapses to custom reference or
-research-only.
-
 ---
 
 ## Evidence already in-tree
@@ -74,7 +69,7 @@ research-only.
 | Golden / sRFC vectors | `cargo test -p token-2022-receive --test golden_vectors` |
 | Layout overlap (not TokenzQd execution) | `--test upstream_differential` |
 | Kit / Codama client | `clients/js` (generated builders + residual `previewOutcome`) |
-| Surfpool RPC lifecycle | In-tree `./scripts/surfpool-lifecycle.sh`; manual/local evidence, not CI-gated |
+| Surfpool RPC lifecycle | `./scripts/surfpool-lifecycle.sh` (Phase 3 demo PR; cite once merged or with PR link) |
 
 **Non-claims:** not legacy Tokenkeg USDC/USDT interception; not ambient policy on unmodified Token-2022; not TokenzQd wire compatibility; not a performance guarantee from point CU samples; not a mainnet product.
 

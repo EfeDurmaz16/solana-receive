@@ -5,21 +5,19 @@
 **Repo:** https://github.com/EfeDurmaz16/solana-receive  
 **Draft:** [`srfc-receive-policy-held-delivery.md`](./srfc-receive-policy-held-delivery.md)  
 **Decisions:** [`decision-request.md`](./decision-request.md)  
-**Status:** Discussion starter — **not** a SIMD. Draft text below is not for paste until the posting checklist is complete.
+**Status:** Discussion starter — **not** a SIMD. **Do not post** until the posting checklist below is checked.
 
 ---
 
 ## Posting checklist (internal)
 
-- [x] PR #4 / Phase 3 Surfpool demo merged; cite the in-tree `./scripts/surfpool-lifecycle.sh`
+- [ ] Phase 3 Surfpool demo merged or explicitly OK to cite from open PR #4
 - [ ] Short post re-read for non-claims (no TokenzQd wire, no USDC intercept, no mainnet product)
 - [ ] Links resolve (SPEC, VERIFICATION, repo)
 - [ ] Explicit user OK to post on #124 (or open a new thread)
 - [ ] Decide venue: comment on #124 vs new Discussion / issue
 
 ---
-
-> Do not paste externally until the checklist is complete.
 
 ## Short post (copy-paste)
 
@@ -41,13 +39,13 @@ Design discussion adjacent to [#124 (account-side transfer hook)](https://github
 - Receipts: bounded, bonded, TTL + permissionless close, full-claim only in v0.
 - Membership evaluates **source token-account owner**.
 
-**Reference (custom program ID).** Token-2022-**shaped**, **not** wire-compatible with `TokenzQd` discriminators. In the repo today:
+**Reference (greenfield custom program ID).** Token-2022-**shaped**, **not** wire-compatible with `TokenzQd` discriminators. In the repo today:
 
 - Normative behavior: `docs/SPEC.md`
 - Frozen wire for clients: `docs/WIRE.md`
 - Host + LiteSVM suites, golden vectors, CU ceilings: `docs/VERIFICATION.md`
 - Codama → Kit JS client (`clients/js`) for third-party assembly
-- Surfpool offline RPC lifecycle (credited → held → claim / expiry) via `./scripts/surfpool-lifecycle.sh`
+- Surfpool offline RPC lifecycle (credited → held → claim / expiry) via `./scripts/surfpool-lifecycle.sh` (landing with the Surfpool demo PR)
 
 Repo: https://github.com/EfeDurmaz16/solana-receive
 
@@ -55,10 +53,10 @@ We are **not** claiming legacy Tokenkeg USDC/USDT interception, ambient policy o
 
 **Ask.**
 
-1. Mint allow-flag: allow account-level `ReceivePolicy` without a mint flag, require a mint flag, or require one only for a canonical Token-2022 path?
-2. Account resolution: is the explicit 9-account policy transfer shape acceptable for discussion, or should any canonical path start from ExtraAccountMeta / resolution accounts?
-3. Reference path: keep this custom program ID reference, rebase toward an upstream Token-2022 fork, or treat the work as research-only?
-4. SIMD: does held delivery belong in canonical Token-2022 / runtime at all? If not, we keep sRFC + custom program ID and stop there.
+1. Is this gap still unsolved at the Token-2022 layer?
+2. Prefer first-class held-delivery in transfer processing, composition on a future #124 revert hook, or research-reference-only?
+3. Should a mint allow-flag be required before accounts enable receive-policy? (reference default: **no**)
+4. If canonical Token-2022 / runtime is in scope, we will draft a SIMD **after** that confirmation; until then: sRFC + custom program ID reference.
 
 **One-liner:** #124 ≈ account-side **revert hook**; this proposal ≈ account-side **non-reverting held delivery**.
 
