@@ -45,7 +45,7 @@ receipt and could never be recovered.
 
 | | |
 | --- | --- |
-| In tree | Reference program, host + LiteSVM suites, golden vectors, Codama/Kit JS client |
+| In tree | Reference program, host + LiteSVM suites, golden vectors, Codama/Kit JS client, Surfpool demo |
 | Measured | CU ceilings + footprints under LiteSVM (see [docs/VERIFICATION.md](docs/VERIFICATION.md)) |
 | Not claimed | Canonical Token-2022, TokenzQd wire compatibility, legacy USDC interception, full upstream extension parity, mainnet product, any upgrade or migration path |
 
