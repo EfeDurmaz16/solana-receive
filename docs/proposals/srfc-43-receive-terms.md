@@ -92,6 +92,8 @@ An earlier draft of this work argued that vaults are a cooperative rail that ord
 never enter. That argument is withdrawn: this proposal is also cooperative, because a sender must
 resolve terms and pass additional accounts. The honest differentiator is custody, stated above.
 
+<img width="932" alt="Custody comparison: a vault authority can withdraw escrowed assets, a program-derived guard owner cannot be signed for at all" src="https://raw.githubusercontent.com/EfeDurmaz16/solana-receive/main/docs/assets/custody-comparison.svg" />
+
 **sRFC 42 (Silent Payments) is orthogonal and shares one piece of machinery.** Silent Payments
 changes *where* a payment lands so an observer cannot link it; this proposal changes *whether* a
 payment counts as delivered. Both, however, require a sender to resolve something the receiver
@@ -103,17 +105,7 @@ would serve both and is proposed as an open question in section 10.
 
 ## 3. Overview
 
-```mermaid
-flowchart TD
-  S["Sender resolves receive terms"] --> Q{Terms found?}
-  Q -->|No| PLAIN["Ordinary transfer to destination"]
-  Q -->|Yes| C{"Policy program: can_credit?"}
-  C -->|Yes| CRED["credited: source to destination"]
-  C -->|No, and sender permits holds| HELD["held: source to guard, receipt written"]
-  C -->|"No, and sender set never_hold"| FAIL["failed: transaction reverts"]
-  HELD --> REC["ClaimReceipt by the recovery authority"]
-  HELD --> EXP["CloseExpiredReceipt after TTL, refunds the sender"]
-```
+<img width="932" alt="Outcome flow: a sender resolves receive terms, and a refusal routes to a guard instead of reverting" src="https://raw.githubusercontent.com/EfeDurmaz16/solana-receive/main/docs/assets/outcome-flow.svg" />
 
 Three outcomes, and exactly one of them is new:
 
@@ -176,12 +168,31 @@ A conforming policy program MUST implement:
 
 - Discriminator preimage: `receive-terms-standard:can-credit`
 - Discriminator: `[0x3b, 0x59, 0xde, 0xf5, 0x15, 0xcb, 0x3b, 0xad]`
-- Extra account metas PDA seeds: `["can-credit-extra-account-metas", terms_account]`
 - Instruction data after the discriminator: `amount: u64`, `mint: Pubkey`, `source_owner: Pubkey`,
   `destination: Pubkey`
-- Accounts, in order: `terms`, `mint`, `destination`, `source_owner`, `flag`, `extra_account_metas`
-- Remaining accounts: as declared in the extra account metas PDA, resolved per
-  [tlv-account-resolution](https://github.com/solana-program/libraries/tree/main/tlv-account-resolution)
+- Accounts, in order, **exactly six, never more**:
+
+| # | Account | Notes |
+| --- | --- | --- |
+| 0 | `terms` | The `ReceiveTerms` account being evaluated |
+| 1 | `mint` | |
+| 2 | `destination` | The destination token account |
+| 3 | `source_owner` | |
+| 4 | `flag` | Proof the call came from the receive program, below |
+| 5 | `policy_state` | The policy program's own state, at `["policy-state", terms]` under the policy program |
+
+**The account list is fixed and so are the seeds.** There is no extra-account-metas resolution and
+no variable tail. This is a deliberate departure from the transfer-hook pattern, and it responds to
+feedback in sRFC 37's own thread, where an implementer who had shipped both sRFC 37 and transfer
+hooks wrote that extra account metas are "extremely painful to debug", that an incorrect account
+gives no signal about whether the pubkey or the seed was wrong, and that they "would not be opposed
+to a more opinionated standard that fixes the number of accounts and possibly even the PDA seeds".
+
+The cost of that choice is stated plainly: a policy program that needs more than one state account
+cannot have one in v0. It must pack its state under `["policy-state", terms]`, or keep the extra
+state off chain and commit to it by hash. In exchange, every `can_credit` call has an identical,
+statically known account list, a sender can build the transaction without querying the policy
+program, and a failure names one of six accounts rather than an unbounded set.
 
 Return semantics: `Ok(())` means credit. Any error means do not credit. A policy program MUST NOT
 assume that an error causes the outer transfer to fail; the receive program converts a refusal into
@@ -312,6 +323,8 @@ closed when it does not hold, rather than relying on the invariant holding by co
 vault holding more than `held_amount` is valid; the surplus is not claimable and MUST NOT be paid
 out against any receipt.
 
+<img width="932" alt="Accounts and PDA seeds: two levels of receive terms, an external policy program, and the guard, guard state and receipt PDAs" src="https://raw.githubusercontent.com/EfeDurmaz16/solana-receive/main/docs/assets/account-map.svg" />
+
 Note that `receiver` throughout is the destination token account's **owner**, never the token
 account address. Two token accounts owned by the same wallet for the same mint therefore share one
 guard shard and one receipt namespace, even when they carry different account-specific terms under
@@ -326,6 +339,8 @@ This section is normative and supersedes any convenience the reference implement
 
 **An off-chain consumer MUST determine the outcome from the destination token account's balance
 delta.** Return data and program logs MUST NOT be treated as authoritative.
+
+<img width="932" alt="Signal channels: return data is forgeable, logs are droppable and forgeable, only the destination balance delta is authoritative" src="https://raw.githubusercontent.com/EfeDurmaz16/solana-receive/main/docs/assets/signal-channels.svg" />
 
 Both weaker channels are defeatable by a hostile payer, who is precisely the adversary this standard
 exists to defend against:
@@ -390,6 +405,28 @@ authority, bond payer and expiry, and is settled against those recorded values.
 **A conforming sender** MUST resolve terms per section 4.1, MUST declare `HeldLimits`, MUST NOT
 assume a landed transaction credited the destination, and SHOULD offer the payer a preview of the
 outcome before signing.
+
+### 9.1 What happens when the sender does not participate
+
+This standard depends on sender-side cooperation, and that dependency deserves to be stated rather
+than discovered. sRFC 37's thread is currently living the same problem from the other side: an
+implementer reported in July 2026 that Phantom creates the ATA but does not append
+`ThawPermissionless`, so the account stays frozen and the transfer fails with `0x11`, and Phantom
+confirmed the flow is not supported today.
+
+The two standards fail in opposite directions, and neither direction is strictly better:
+
+| | Non-participating sender |
+| --- | --- |
+| sRFC 37 | Fails closed. The payment reverts with `AccountFrozen`. The receiver's rule is enforced, but a payer who did nothing wrong cannot pay. |
+| This proposal | Degrades open. The transfer credits the destination as it does today. The payer is never blocked, but the receiver's terms are not applied. |
+
+Degrading open is the right default for a rail whose whole premise is that a refusal should not
+punish the sender, and it means adoption can begin with a single cooperating PSP rather than
+requiring every wallet first. It also means **terms are not a security boundary against a
+non-participating sender.** A receiver who needs enforcement against arbitrary senders wants an
+issuer-side control such as sRFC 37, not this. A receiver who wants to classify and quarantine what
+its own counterparties send wants this.
 
 **A conforming receiver** MUST NOT treat `held` value as received, and MUST be able to enumerate its
 own guard shard.
