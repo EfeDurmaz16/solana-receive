@@ -84,12 +84,12 @@ Every path that derives a PDA varies by several thousand CU run to run, because 
 | --- | --- | --- | --- |
 | No-policy transfer | 4 | 2.9k | 10_000 |
 | Policy credited | 9 | 7.2k - 14.7k | 40_000 |
-| Policy held | 9 | 15.5k - 21.5k | 50_000 |
+| Policy held | 9 | 12.5k - 23.0k | 50_000 |
 | Missing metas | 4 (incomplete) | 2.3k | 10_000 |
-| Claim held dust | 7 | 9.4k - 16.9k | 40_000 |
-| Close expired | 6 | 9.3k - 13.8k | 40_000 |
+| Claim held dust | 7 | 8.2k - 18.7k | 40_000 |
+| Close expired | 6 | 8.1k - 14.1k | 40_000 |
 
-Serialized policy-transfer tx ≈ **556B** (&lt; 1232). Contention: distinct receivers do not share a writable guard; same `(receiver, mint)` serializes. Mollusk not integrated on this toolchain.
+Serialized policy-transfer tx ≈ **557B** (&lt; 1232). Contention: distinct receivers do not share a writable guard; same `(receiver, mint)` serializes. Mollusk not integrated on this toolchain.
 
 ## 9. Reference vectors
 

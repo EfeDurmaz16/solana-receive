@@ -60,6 +60,8 @@ pub enum ReceiveTokenError {
     BondAboveSenderLimit = 29,
     #[error("Receipt TTL exceeds the sender's declared maximum")]
     TtlAboveSenderLimit = 30,
+    #[error("Recovery mode gives away more custody than the sender allowed")]
+    RecoveryModeAboveSenderLimit = 31,
 }
 
 impl From<ReceiveTokenError> for ProgramError {

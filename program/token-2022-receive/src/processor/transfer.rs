@@ -222,6 +222,9 @@ pub fn process_transfer_checked(
         if policy.receipt_ttl_slots > limits.max_ttl_slots {
             return Err(ReceiveTokenError::TtlAboveSenderLimit.into());
         }
+        if policy.recovery_authority_mode > limits.max_recovery_mode {
+            return Err(ReceiveTokenError::RecoveryModeAboveSenderLimit.into());
+        }
 
         let seeds: &[&[u8]] = &[
             crate::constants::RECEIPT_SEED,

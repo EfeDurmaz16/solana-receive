@@ -20,16 +20,17 @@ fn transfer_checked_wire_vector() {
         limits: HeldLimits::unlimited(),
     }
     .pack();
-    assert_eq!(packed.len(), 58);
+    assert_eq!(packed.len(), 59);
     assert_eq!(
         hex(&packed),
         format!(
-            "04{}{}{}{}{}",
+            "04{}{}{}{}{}{}",
             "0100000000000000", // amount
             "06",               // decimals
             "09".repeat(32),    // unique_nonce
             "ffffffffffffffff", // max_bond_lamports
             "ffffffffffffffff", // max_ttl_slots
+            "02",               // max_recovery_mode: ThirdParty, i.e. accept any
         )
     );
 }

@@ -347,7 +347,16 @@ fn error_discriminants_are_stable() {
         (E::GuardUnderfunded, 28),
         (E::BondAboveSenderLimit, 29),
         (E::TtlAboveSenderLimit, 30),
+        (E::RecoveryModeAboveSenderLimit, 31),
     ] {
         assert_eq!(variant.clone() as u32, code, "{variant:?} moved");
     }
+}
+
+#[test]
+fn a_mint_cannot_be_allocated_at_token_account_size() {
+    // Neither type carries a tag, so a mint with >= ACCOUNT_SIZE bytes would parse as an
+    // uninitialized token account and InitializeAccount3 would overwrite it, bricking every
+    // token account of that mint. Keeping the two disjoint by size is what prevents it.
+    assert!(token_2022_receive::state::MINT_SIZE < token_2022_receive::state::ACCOUNT_SIZE);
 }

@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 
 import {
   NO_HELD_DELIVERY,
+  UNLIMITED_HELD_LIMITS,
   decodeTransferOutcome,
   encodeInitializeReceivePolicy,
   encodeTransferChecked,
@@ -33,16 +34,22 @@ test("encodeU64LE rejects values outside u64", () => {
 
 test("TransferChecked wire vector", () => {
   const nonce = new Uint8Array(32).fill(9);
-  const got = encodeTransferChecked({ amount: 1n, decimals: 6, uniqueNonce: nonce });
-  assert.equal(got.length, 58);
+  const got = encodeTransferChecked({
+    amount: 1n,
+    decimals: 6,
+    uniqueNonce: nonce,
+    limits: UNLIMITED_HELD_LIMITS,
+  });
+  assert.equal(got.length, 59);
   assert.equal(
     hex(got),
     "04" +
       "0100000000000000" + // amount
       "06" + // decimals
       "09".repeat(32) + // uniqueNonce
-      "ffffffffffffffff" + // maxBondLamports, defaults to unlimited
-      "ffffffffffffffff", // maxTtlSlots
+      "ffffffffffffffff" + // maxBondLamports
+      "ffffffffffffffff" + // maxTtlSlots
+      "02", // maxRecoveryMode: ThirdParty, i.e. accept any
   );
 
   // Refusing held delivery outright.
@@ -52,9 +59,23 @@ test("TransferChecked wire vector", () => {
     uniqueNonce: nonce,
     limits: NO_HELD_DELIVERY,
   });
-  assert.equal(hex(refused).slice(-32), "0".repeat(32));
+  assert.equal(hex(refused).slice(-34), "0".repeat(34));
   assert.throws(() =>
-    encodeTransferChecked({ amount: 1n, decimals: 6, uniqueNonce: new Uint8Array(31) }),
+    encodeTransferChecked({
+      amount: 1n,
+      decimals: 6,
+      uniqueNonce: new Uint8Array(31),
+      limits: UNLIMITED_HELD_LIMITS,
+    }),
+  );
+  // Out-of-range recovery ceiling must fail before a transaction is paid for.
+  assert.throws(() =>
+    encodeTransferChecked({
+      amount: 1n,
+      decimals: 6,
+      uniqueNonce: nonce,
+      limits: { ...UNLIMITED_HELD_LIMITS, maxRecoveryMode: 3 },
+    }),
   );
 });
 

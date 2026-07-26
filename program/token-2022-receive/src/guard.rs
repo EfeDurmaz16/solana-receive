@@ -24,6 +24,8 @@ pub struct GuardState {
     pub receiver: Pubkey,
     pub mint: Pubkey,
     pub guard_token_account: Pubkey,
+    /// Observability only: no instruction branches on it. Kept because an indexer or an operator
+    /// needs to know a shard has outstanding obligations without scanning for receipt PDAs.
     pub open_receipts: u64,
     pub held_amount: u64,
 }

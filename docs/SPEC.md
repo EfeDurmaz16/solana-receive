@@ -83,7 +83,7 @@ rent griefing; `GuardState.held_amount` is what makes custody verifiable.
 
 ### `failed`
 
-Ordinary token or account-resolution failure (insufficient funds, freeze, decimals, missing policy metas, guard at capacity, incompatible extensions). Balances unchanged. No receipt.
+Ordinary token or account-resolution failure (insufficient funds, freeze, decimals, missing policy metas, incompatible extensions, or a hold outside the sender's declared limits). Balances unchanged. No receipt.
 
 ### `credited`
 
@@ -113,7 +113,12 @@ create a receipt whose bond or TTL exceeds them, the instruction **fails** inste
 | --- | --- |
 | `HeldLimits::unlimited()` | Accept whatever the destination's policy says |
 | `HeldLimits::no_hold()` | Never hold: a policy rejection becomes `failed` and the sender keeps the funds |
+| `HeldLimits::originator_recovery_only()` | Hold only while the sender remains the recovery authority |
 | Explicit values | Hold only on the sender's terms |
+
+`max_recovery_mode` bounds custody, not cost: under `Receiver` or `ThirdParty` recovery the party
+that rejected the payment also chooses who may claim it, so a sender that caps only bond and TTL
+has still handed the destination discretion over the funds.
 
 Limits bound the **held** outcome only. A transfer the policy accepts is credited regardless.
 
@@ -165,8 +170,8 @@ ordinary path, because `EnsureGuard` records the shard's receiver in the otherwi
 
 ## 8. Account resolution (policy transfer)
 
-`TransferChecked` instruction data is **58** bytes: tag, `amount`, `decimals`, `unique_nonce`,
-`max_bond_lamports`, `max_ttl_slots`.
+`TransferChecked` instruction data is **59** bytes: tag, `amount`, `decimals`, `unique_nonce`,
+`max_bond_lamports`, `max_ttl_slots`, `max_recovery_mode`.
 
 When destination has ReceivePolicy, `TransferChecked` requires **9** accounts:
 
@@ -212,7 +217,7 @@ destination owner is hostile.
 | Undeclared extension coexistence | Any non-ReceivePolicy account extension → `failed` |
 | Missing metas → silent bypass | Fail-closed |
 | Global guard hotspot | Per-receiver shards |
-| Receipt rent griefing | Bond + capacity + TTL |
+| Receipt rent griefing | Depositor-funded bond + TTL (no shared capacity to exhaust) |
 | Permissionless close steals bond | `bond_dest` must equal recorded `bond_payer` |
 | Wrong guard accounts on claim/expiry | PDA + guard-state field checks (both transfer and claim paths) |
 | Delegate / permanent-delegate confusion | Membership = source owner |

@@ -323,3 +323,59 @@ fn expiry_close_rejects_guard_as_the_source_owner_account() {
     .expect_err("guard must not be the expiry payout account");
     assert_eq!(token_amount(&fx.svm, &held.guard_token), 99);
 }
+
+#[test]
+fn claim_rejects_a_foreign_shards_guard_as_payout() {
+    // require_distinct_payout only covered this receipt's OWN guard. Any other shard's guard
+    // passes program-ownership, mint and frozen checks, and a guard's only debit paths pay out
+    // against a receipt, so tokens arriving without one can never leave.
+    let mut fx = Fixture::boot(1_000);
+    let held = hold_with_recovery(
+        &mut fx,
+        RecoveryAuthorityMode::Originator,
+        Pubkey::default(),
+        [61u8; 32],
+    );
+
+    // A second, unrelated shard for a different receiver, same mint.
+    let other_receiver = Keypair::new();
+    let (other_guard, _) =
+        derive_guard_token_address(&other_receiver.pubkey(), &fx.mint.pubkey(), &fx.program_id);
+    let (other_state, _) =
+        derive_guard_state_address(&other_receiver.pubkey(), &fx.mint.pubkey(), &fx.program_id);
+    send(
+        &mut fx.svm,
+        &fx.payer,
+        &[],
+        vec![ensure_guard(
+            &fx.program_id,
+            &fx.payer.pubkey(),
+            &other_receiver.pubkey(),
+            &fx.mint.pubkey(),
+            &other_guard,
+            &other_state,
+        )],
+    )
+    .expect("second shard");
+    fx.svm.expire_blockhash();
+
+    send(
+        &mut fx.svm,
+        &fx.payer,
+        &[&fx.source_owner],
+        vec![claim_receipt(
+            &fx.program_id,
+            &held.receipt,
+            &held.guard_token,
+            &held.guard_state,
+            &other_guard,
+            &fx.mint.pubkey(),
+            &fx.source_owner.pubkey(),
+            &fx.payer.pubkey(),
+        )],
+    )
+    .expect_err("no guard may be a payout destination, not even another shard's");
+
+    assert_eq!(token_amount(&fx.svm, &held.guard_token), 99);
+    assert_eq!(token_amount(&fx.svm, &other_guard), 0);
+}

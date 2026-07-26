@@ -2,6 +2,7 @@
 
 use crate::constants::ALLOWLIST_CAP;
 use crate::error::ReceiveTokenError;
+use crate::extension::receive_policy::RecoveryAuthorityMode;
 use solana_program::{
     instruction::{AccountMeta, Instruction},
     program_error::ProgramError,
@@ -188,6 +189,9 @@ impl ReceiveTokenInstruction {
                 unique_nonce.copy_from_slice(&rest[..32]);
                 let (max_bond_lamports, rest) = unpack_u64(&rest[32..])?;
                 let (max_ttl_slots, rest) = unpack_u64(rest)?;
+                let (&max_recovery_mode, rest) = rest
+                    .split_first()
+                    .ok_or(ReceiveTokenError::InvalidInstruction)?;
                 *trailing = rest;
                 Self::TransferChecked {
                     amount,
@@ -196,6 +200,7 @@ impl ReceiveTokenInstruction {
                     limits: HeldLimits {
                         max_bond_lamports,
                         max_ttl_slots,
+                        max_recovery_mode,
                     },
                 }
             }
@@ -273,6 +278,7 @@ impl ReceiveTokenInstruction {
                 buf.extend_from_slice(unique_nonce);
                 buf.extend_from_slice(&limits.max_bond_lamports.to_le_bytes());
                 buf.extend_from_slice(&limits.max_ttl_slots.to_le_bytes());
+                buf.push(limits.max_recovery_mode);
             }
             Self::ClaimReceipt => buf.push(5),
             Self::CloseExpiredReceipt => buf.push(6),
@@ -286,10 +292,17 @@ impl ReceiveTokenInstruction {
 }
 
 /// Sender-declared ceilings on a held outcome.
+///
+/// Bounding cost alone is not enough: `max_recovery_mode` bounds *custody*. Under
+/// `RecoveryAuthorityMode::Receiver` or `ThirdParty` the party that rejected the payment also
+/// chooses who may claim it, so a sender that caps only the bond and the TTL has still handed the
+/// destination discretion over the funds. The modes are ordered by how much the sender gives up:
+/// `Originator`(0) keeps recovery with the sender, `Receiver`(1) and `ThirdParty`(2) do not.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HeldLimits {
     pub max_bond_lamports: u64,
     pub max_ttl_slots: u64,
+    pub max_recovery_mode: u8,
 }
 
 impl HeldLimits {
@@ -298,6 +311,7 @@ impl HeldLimits {
         Self {
             max_bond_lamports: u64::MAX,
             max_ttl_slots: u64::MAX,
+            max_recovery_mode: RecoveryAuthorityMode::ThirdParty as u8,
         }
     }
 
@@ -306,6 +320,15 @@ impl HeldLimits {
         Self {
             max_bond_lamports: 0,
             max_ttl_slots: 0,
+            max_recovery_mode: RecoveryAuthorityMode::Originator as u8,
+        }
+    }
+
+    /// Accept a hold only if the sender itself remains the recovery authority.
+    pub fn originator_recovery_only() -> Self {
+        Self {
+            max_recovery_mode: RecoveryAuthorityMode::Originator as u8,
+            ..Self::unlimited()
         }
     }
 }

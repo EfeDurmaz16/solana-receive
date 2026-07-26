@@ -3,8 +3,8 @@
 use crate::error::ReceiveTokenError;
 use crate::extension::tlv::{pack_account, unpack_account};
 use crate::guard::{
-    assert_guard_backed, assert_guard_state_pda, assert_guard_token_pda, load_guard_state,
-    GuardState, GUARD_STATE_SIZE,
+    assert_guard_backed, assert_guard_state_pda, assert_guard_token_pda, is_guard_token_account,
+    load_guard_state, GuardState, GUARD_STATE_SIZE,
 };
 use crate::processor::require_signer;
 use crate::receipt::{
@@ -68,12 +68,27 @@ fn validate_guard_accounts(
     Ok(())
 }
 
-/// The guard debit and the payout credit run in two separate borrows of account data. If the
-/// two accounts are the same, the writes cancel to a no-op while the receipt is still closed
-/// and the bond refunded, stranding the tokens with no open receipt to recover them.
-fn require_distinct_payout(payout: &AccountInfo, guard_token: &AccountInfo) -> ProgramResult {
+/// Validate a settlement payout destination.
+///
+/// Two distinct hazards, both ending in unrecoverable tokens:
+///
+/// - Aliasing this receipt's own guard. The debit and the credit run in separate borrows, so the
+///   writes cancel to a no-op while the receipt is still closed and the bond refunded.
+/// - Paying into *any* guard vault, including another shard's. A guard's only debit paths pay out
+///   against a receipt, so tokens arriving without one can never leave. Program ownership, mint
+///   and frozen-state checks all pass for a foreign guard, and `is_guard_token_account` is what
+///   makes the "every credit path refuses a guard" rule actually hold here.
+fn require_payout_destination(
+    payout: &AccountInfo,
+    guard_token: &AccountInfo,
+    program_id: &Pubkey,
+) -> ProgramResult {
     if payout.key == guard_token.key {
         return Err(ReceiveTokenError::SelfTransferForbidden.into());
+    }
+    let account = unpack_account(&payout.try_borrow_data()?)?;
+    if is_guard_token_account(&account, payout.key, program_id) {
+        return Err(ReceiveTokenError::GuardNotTransferable.into());
     }
     Ok(())
 }
@@ -135,10 +150,10 @@ pub fn process_claim_receipt(program_id: &Pubkey, accounts: &[AccountInfo]) -> P
         &receipt.mint,
     )?;
 
-    require_distinct_payout(claim_destination, guard_token)?;
     if claim_destination.owner != program_id {
         return Err(ProgramError::IncorrectProgramId);
     }
+    require_payout_destination(claim_destination, guard_token, program_id)?;
     {
         let dest_data = claim_destination.try_borrow_data()?;
         let dest = unpack_account(&dest_data)?;
@@ -211,10 +226,10 @@ pub fn process_close_expired_receipt(
         &receipt.mint,
     )?;
 
-    require_distinct_payout(source_owner_ata, guard_token)?;
     if source_owner_ata.owner != program_id {
         return Err(ProgramError::IncorrectProgramId);
     }
+    require_payout_destination(source_owner_ata, guard_token, program_id)?;
     {
         let ata_data = source_owner_ata.try_borrow_data()?;
         let ata = unpack_account(&ata_data)?;

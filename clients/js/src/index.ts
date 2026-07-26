@@ -94,6 +94,8 @@ function requireByte(value: number, max: number, label: string): number {
 export type HeldLimits = {
   maxBondLamports: bigint | number;
   maxTtlSlots: bigint | number;
+  /** 0 Originator, 1 Receiver, 2 ThirdParty. Bounds custody, not just cost. */
+  maxRecoveryMode: number;
 };
 
 const U64_MAX_LIT = (1n << 64n) - 1n;
@@ -101,30 +103,43 @@ const U64_MAX_LIT = (1n << 64n) - 1n;
 export const UNLIMITED_HELD_LIMITS: HeldLimits = {
   maxBondLamports: U64_MAX_LIT,
   maxTtlSlots: U64_MAX_LIT,
+  maxRecoveryMode: 2,
 };
 
 export const NO_HELD_DELIVERY: HeldLimits = {
   maxBondLamports: 0n,
   maxTtlSlots: 0n,
+  maxRecoveryMode: 0,
+};
+
+/** Accept a hold only while the sender itself remains the recovery authority. */
+export const ORIGINATOR_RECOVERY_ONLY: HeldLimits = {
+  ...UNLIMITED_HELD_LIMITS,
+  maxRecoveryMode: 0,
 };
 
 export function encodeTransferChecked(params: {
   amount: bigint | number;
   decimals: number;
   uniqueNonce: Uint8Array;
-  limits?: HeldLimits;
+  /**
+   * Required, deliberately. Defaulting to unlimited would silently hand the destination the
+   * choice of bond, lock duration and recovery authority; pass `UNLIMITED_HELD_LIMITS` to opt
+   * into that explicitly.
+   */
+  limits: HeldLimits;
 }): Uint8Array {
   if (params.uniqueNonce.length !== 32) {
     throw new Error("uniqueNonce must be 32 bytes");
   }
-  const limits = params.limits ?? UNLIMITED_HELD_LIMITS;
-  const out = new Uint8Array(1 + 8 + 1 + 32 + 8 + 8);
+  const out = new Uint8Array(1 + 8 + 1 + 32 + 8 + 8 + 1);
   out[0] = Ix.TransferChecked;
   out.set(encodeU64LE(params.amount), 1);
   out[9] = requireByte(params.decimals, 255, "decimals");
   out.set(params.uniqueNonce, 10);
-  out.set(encodeU64LE(limits.maxBondLamports), 42);
-  out.set(encodeU64LE(limits.maxTtlSlots), 50);
+  out.set(encodeU64LE(params.limits.maxBondLamports), 42);
+  out.set(encodeU64LE(params.limits.maxTtlSlots), 50);
+  out[58] = requireByte(params.limits.maxRecoveryMode, 2, "maxRecoveryMode");
   return out;
 }
 

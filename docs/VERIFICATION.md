@@ -16,15 +16,15 @@ How to reproduce host and on-VM evidence for `token-2022-receive`.
 | Wire vectors | `cargo test -p token-2022-receive --test wire_vectors` | Byte vectors shared with the JS client |
 | Sender limits | `cargo build-sbf` then `cargo test -p token-2022-receive --test sender_limits` | Refuse a hold; cap bond; cap TTL |
 | JS client | `cd clients/js && npm run typecheck && npm test` | Encoder vectors, pubkey length checks, account roles |
-
-CI runs all of the above on every push and pull request (`.github/workflows/ci.yml`), including
-`cargo fmt --check` and `cargo clippy --lib -D warnings`.
 | Host verify | `cargo test -p token-2022-receive --test verify_no_policy --test verify_policy_transfer --test verify_receipt_lifecycle` | Stateful AccountInfo + syscall stubs |
 | Golden vectors | `cargo test -p token-2022-receive --test golden_vectors` | sRFC §9 IDs `V-NP`…`V-AU` + nonce contract |
 | Upstream differential | `cargo test -p token-2022-receive --test upstream_differential` | Layout + no-policy overlap (not TokenzQd) |
 | CU ceilings | `cargo build-sbf` then `cargo test -p token-2022-receive --test cu_ceilings -- --nocapture` | Regression alarms + tx footprint |
 | LiteSVM | `cargo build-sbf` then `cargo test -p token-2022-receive --test litesvm_before_after --test litesvm_lifecycle -- --nocapture` | Real SBF + CU |
 | Surfpool | `./scripts/surfpool-before-after.sh` | Optional RPC localnet (CLI may be absent) |
+
+CI runs all of the above on every push and pull request (`.github/workflows/ci.yml`), including
+`cargo fmt --check` and `cargo clippy --lib -- -D warnings`.
 
 Full package:
 
@@ -52,14 +52,14 @@ Same dust (`1`), same mint/source:
 
 | Case | Outcome | Dest | Guard | CU (range) | Ceiling |
 | --- | --- | --- | --- | --- | --- |
-| BEFORE - no policy | credited | `1` | n/a | **2896** | 10_000 |
-| AFTER - policy, dust | held | `0` | `1` | **15.5k - 21.5k** | 50_000 |
+| BEFORE - no policy | credited | `1` | n/a | **2909** | 10_000 |
+| AFTER - policy, dust | held | `0` | `1` | **12.5k - 23.0k** | 50_000 |
 | AFTER - policy accepts `150` | credited | `150` | `0` | **7.2k - 14.7k** | 40_000 |
-| AFTER - metas missing | failed `Custom(10)` | `0` | - | **2287** | 10_000 |
-| Claim held dust | claim to dest | claim `1` | `0` | **9.4k - 16.9k** | 40_000 |
-| Close expired | refund source ATA | - | `0` | **9.3k - 13.8k** | 40_000 |
+| AFTER - metas missing | failed `Custom(10)` | `0` | - | **2300** | 10_000 |
+| Claim held dust | claim to dest | claim `1` | `0` | **8.2k - 18.7k** | 40_000 |
+| Close expired | refund source ATA | - | `0` | **8.1k - 14.1k** | 40_000 |
 
-Ranges are measured over repeated runs of the same binary, not across rebuilds. Every path that
+Ranges are the min and max over six runs of the same binary, not across rebuilds. Every path that
 derives a PDA varies by several thousand CU run to run because `find_program_address` searches
 downward from bump 255 and the number of iterations depends on the keys involved, which the
 fixtures generate randomly. The two paths that derive no PDA (`no-policy`, `missing-metas`) are
@@ -119,8 +119,8 @@ leave documented gaps rather than renumbering live codes.
 
 | Instruction | Accounts | Data bytes |
 | --- | --- | --- |
-| `TransferChecked` (no policy) | 4 | 58 |
-| `TransferChecked` (policy) | 9 | 58 |
+| `TransferChecked` (no policy) | 4 | 59 |
+| `TransferChecked` (policy) | 9 | 59 |
 | `ClaimReceipt` | 7 | 1 |
 | `CloseExpiredReceipt` | 6 | 1 |
 
@@ -139,6 +139,7 @@ Use when exercising RPC / Kit demos. For program semantics + CU, LiteSVM is enou
 
 ## Gaps (not yet regression-gated)
 
-1. Scheduler-faithful multi-tx contention measurement (account-lock analysis only for now).
-2. Surfpool + Kit client demo once CLI is installed.
-4. Scheduler-faithful multi-tx contention beyond the account-lock analysis.
+1. Scheduler-faithful multi-transaction contention (account-lock analysis only for now).
+2. Surfpool + Kit client demo once the CLI is installed.
+3. `GuardState` has no version field, so the 112 to 120 byte layout change is not migratable.
+   Nothing is deployed, so this is a note for whoever deploys first, not an outstanding defect.

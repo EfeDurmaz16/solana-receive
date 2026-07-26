@@ -26,7 +26,7 @@ Instruction tags are **reference-local** (not TokenzQd wire-compatible). Deploy 
 
 | Outcome | When |
 | --- | --- |
-| `failed` | Ordinary token failure, missing metas, or capacity |
+| `failed` | Ordinary token failure, missing metas, or a hold outside the sender's limits |
 | `credited` | Policy accepts → destination |
 | `held` | Policy rejects → guard + receipt; `Ok` |
 

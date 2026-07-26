@@ -26,10 +26,9 @@ use solana_program::{
 
 /// Refuse to initialize over an account this program already uses for something else.
 ///
-/// Mints and token accounts carry no type tag, so both initializers decide an account is free
-/// purely from its bytes parsing as uninitialized. Receipts and guard state do carry a leading
-/// discriminator, so checking it stops a Receipt or GuardState from being reinterpreted as a
-/// mint or a token account and overwritten.
+/// Receipts and guard state carry a leading discriminator, so checking it stops either from being
+/// reinterpreted as a mint or a token account and overwritten. Mints and token accounts have no
+/// tag of their own; they are kept disjoint by size instead (see `process_initialize_mint2`).
 fn reject_typed_account(data: &[u8]) -> ProgramResult {
     if data.len() < 8 {
         return Ok(());
@@ -54,7 +53,11 @@ pub fn process_initialize_mint2(
         return Err(ProgramError::IncorrectProgramId);
     }
     let mut data = mint_info.try_borrow_mut_data()?;
-    if data.len() < MINT_SIZE {
+    // Exactly MINT_SIZE, not "at least". Neither mints nor token accounts carry a type tag, so a
+    // mint allocated with >= ACCOUNT_SIZE bytes parses as an uninitialized token account and
+    // InitializeAccount3 would overwrite it, bricking every token account of that mint. Pinning
+    // the length keeps the two types disjoint by size. v0 defines no mint extensions.
+    if data.len() != MINT_SIZE {
         return Err(ReceiveTokenError::InvalidAccountData.into());
     }
     reject_typed_account(&data)?;
