@@ -70,7 +70,8 @@ docs/SPEC.md                  # Normative v0 semantics
 docs/WIRE.md                  # Frozen byte/account contract for codegen
 docs/VERIFICATION.md          # How to re-run evidence + measured CU
 docs/proposals/               # sRFC, decision request, maintainer note, SIMD gate
-scripts/                      # Optional Surfpool checklist
+scripts/                      # Surfpool lifecycle + codegen helpers
+demos/receive/                # Honest Surfpool demo UI (custom program/mint)
 .upstream-token-2022-sha.txt  # Pinned upstream SHA for layout inspiration
 ```
 
