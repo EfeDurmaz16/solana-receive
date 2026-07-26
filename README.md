@@ -75,7 +75,7 @@ and declared-ID vs local deploy-keypair story.
 
 Expect exit 0. The wrapper runs the Rust/SBF gates plus root `npm ci`,
 `npm run codegen:check`, and the JS client suite (`cd clients/js && npm ci &&
-npm test`); the JS suite currently reports 14 passing.
+npm test`); the JS suite currently reports 17 passing.
 
 Security-relevant regression suites: `guard_custody` (held funds unspendable by the receiver,
 outcome reporting) and `policy_bounds` (write-once policy, mode validation, bond/TTL caps).

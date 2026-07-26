@@ -5,23 +5,25 @@
 **Repo:** https://github.com/EfeDurmaz16/solana-receive  
 **Draft:** [`srfc-receive-policy-held-delivery.md`](./srfc-receive-policy-held-delivery.md)  
 **Decisions:** [`decision-request.md`](./decision-request.md)  
-**Status:** Discussion starter — **not** a SIMD. Draft text below is not for paste until the posting checklist is complete.
+**Status:** Superseded by [`srfc-43-receive-terms.md`](./srfc-43-receive-terms.md).
 
----
+This document argued for held delivery as a change to canonical Token-2022, addressed to the
+maintainers on #124. That framing was set aside: the work is now an application standard on
+unmodified Token-2022, which needs no core change. Two arguments made below are withdrawn in the
+successor and should not be reused.
 
-## Posting checklist (internal)
+1. "App `deposit()` vaults are cooperative; ordinary ATA transfers never enter them." Equally true
+   of the reference program, whose accounts cannot be ATAs at all and whose policy destinations
+   require a sender to pass extra accounts and sign a bond. The real differentiator is custody
+   under a program-derived address, not reach.
+2. "Chain return data / logs are authoritative for held vs credited." They are not. Return data is
+   transaction-scoped and can be overwritten by a later instruction; logs can be truncated by
+   padding the transaction or forged by any program in it. The authoritative signal is the
+   destination token account's balance delta.
 
-- [x] PR #4 / Phase 3 Surfpool demo merged; cite the in-tree `./scripts/surfpool-lifecycle.sh`
-- [ ] Short post re-read for non-claims (no TokenzQd wire, no USDC intercept, no mainnet product)
-- [ ] Links resolve (SPEC, VERIFICATION, repo)
-- [ ] Explicit user OK to post on #124 (or open a new thread)
-- [ ] Decide venue: comment on #124 vs new Discussion / issue
+Kept for provenance.
 
----
-
-> Do not paste externally until the checklist is complete.
-
-## Short post (copy-paste)
+## Short post (retained for provenance)
 
 **Title:** Receiver-side inbound policy: #124 revert hooks vs non-reverting held delivery
 
