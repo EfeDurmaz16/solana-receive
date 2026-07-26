@@ -18,6 +18,7 @@ use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signer;
 use token_2022_receive::extension::tlv::unpack_account;
 use token_2022_receive::guard::{derive_guard_state_address, derive_guard_token_address};
+use token_2022_receive::instruction::HeldLimits;
 use token_2022_receive::instruction::{claim_receipt, transfer_checked, PolicyTransferAccounts};
 use token_2022_receive::receipt::derive_receipt_address;
 
@@ -29,6 +30,14 @@ struct Held {
 
 /// dest carries ReceivePolicy { min_amount: 100 }, so a 99-token transfer is rejected -> held.
 fn hold_99(fx: &mut Fixture, nonce: [u8; 32]) -> Held {
+    let before = fx
+        .svm
+        .get_account(
+            &derive_guard_token_address(&fx.dest_owner.pubkey(), &fx.mint.pubkey(), &fx.program_id)
+                .0,
+        )
+        .map(|a| unpack_account(&a.data).map(|t| t.amount).unwrap_or(0))
+        .unwrap_or(0);
     let (guard_token, _) =
         derive_guard_token_address(&fx.dest_owner.pubkey(), &fx.mint.pubkey(), &fx.program_id);
     let (guard_state, _) =
@@ -53,6 +62,7 @@ fn hold_99(fx: &mut Fixture, nonce: [u8; 32]) -> Held {
             99,
             6,
             nonce,
+            HeldLimits::unlimited(),
             Some(PolicyTransferAccounts {
                 guard_token,
                 guard_state,
@@ -63,7 +73,7 @@ fn hold_99(fx: &mut Fixture, nonce: [u8; 32]) -> Held {
     )
     .expect("held transfer");
     fx.svm.expire_blockhash();
-    assert_eq!(token_amount(&fx.svm, &guard_token), 99);
+    assert_eq!(token_amount(&fx.svm, &guard_token), before + 99);
     Held {
         guard_token,
         guard_state,
@@ -73,7 +83,7 @@ fn hold_99(fx: &mut Fixture, nonce: [u8; 32]) -> Held {
 
 #[test]
 fn guard_token_account_is_not_owned_by_the_receiver() {
-    let mut fx = Fixture::boot(1_000).with_policy_dest(100);
+    let fx = Fixture::boot(1_000).with_policy_dest(100);
     let (guard_token, _) =
         derive_guard_token_address(&fx.dest_owner.pubkey(), &fx.mint.pubkey(), &fx.program_id);
     let (guard_state, _) =
@@ -113,6 +123,7 @@ fn receiver_cannot_drain_guard_with_plain_transfer() {
             99,
             6,
             [0u8; 32],
+            HeldLimits::unlimited(),
             None,
         )],
     )
@@ -143,6 +154,7 @@ fn guard_stays_claimable_by_the_originator_after_a_drain_attempt() {
             99,
             6,
             [0u8; 32],
+            HeldLimits::unlimited(),
             None,
         )],
     );
@@ -196,6 +208,7 @@ fn a_guard_cannot_be_credited_by_any_path() {
             10,
             6,
             [0u8; 32],
+            HeldLimits::unlimited(),
             None,
         )],
     )
@@ -310,6 +323,7 @@ fn held_transfer_requires_an_initialized_guard_state() {
                 amount,
                 6,
                 nonce,
+                HeldLimits::unlimited(),
                 Some(PolicyTransferAccounts {
                     guard_token,
                     guard_state,
@@ -358,6 +372,7 @@ fn transfer_reports_credited_vs_held_in_return_data() {
                 amount,
                 6,
                 nonce,
+                HeldLimits::unlimited(),
                 Some(PolicyTransferAccounts {
                     guard_token,
                     guard_state,
@@ -381,8 +396,8 @@ fn transfer_reports_credited_vs_held_in_return_data() {
 
 #[test]
 fn zero_amount_transfer_cannot_burn_a_shard_slot() {
-    // A zero-amount hold moves nothing but consumes one of MAX_OPEN_RECEIPTS, so without
-    // this an attacker holding no tokens at all could fill a victim's shard.
+    // A zero-amount hold moves nothing but still opens a receipt, so without this an
+    // attacker holding no tokens at all could pile receipts onto a victim's shard.
     let mut fx = Fixture::boot(1_000).with_policy_dest(100);
     let (guard_token, _) =
         derive_guard_token_address(&fx.dest_owner.pubkey(), &fx.mint.pubkey(), &fx.program_id);
@@ -410,6 +425,7 @@ fn zero_amount_transfer_cannot_burn_a_shard_slot() {
             0,
             6,
             nonce,
+            HeldLimits::unlimited(),
             Some(PolicyTransferAccounts {
                 guard_token,
                 guard_state,
@@ -419,4 +435,54 @@ fn zero_amount_transfer_cannot_burn_a_shard_slot() {
         )],
     )
     .expect_err("zero-amount hold must be rejected");
+}
+
+#[test]
+fn guard_state_accounts_for_every_held_token() {
+    // held_amount is what makes `guard.amount >= sum(open receipts)` assertable rather than
+    // merely true by construction. Track it across a hold and a claim.
+    use token_2022_receive::guard::GuardState;
+
+    let mut fx = Fixture::boot(1_000).with_policy_dest(100);
+    let read_state = |fx: &Fixture, key: &Pubkey| -> GuardState {
+        let acct = fx.svm.get_account(key).expect("guard state");
+        *bytemuck::from_bytes::<GuardState>(&acct.data[..std::mem::size_of::<GuardState>()])
+    };
+
+    let a = hold_99(&mut fx, [101u8; 32]);
+    let gs = read_state(&fx, &a.guard_state);
+    assert_eq!(gs.open_receipts, 1);
+    assert_eq!(gs.held_amount, 99);
+    assert!(token_amount(&fx.svm, &a.guard_token) >= gs.held_amount);
+
+    // A second hold from the same sender: no capacity ceiling, and both are accounted.
+    let b = hold_99(&mut fx, [102u8; 32]);
+    let gs = read_state(&fx, &b.guard_state);
+    assert_eq!(gs.open_receipts, 2);
+    assert_eq!(gs.held_amount, 198);
+    assert_eq!(token_amount(&fx.svm, &b.guard_token), 198);
+
+    let claim_dest = fx.create_token_account(&fx.source_owner.pubkey());
+    fx.svm.expire_blockhash();
+    send(
+        &mut fx.svm,
+        &fx.payer,
+        &[&fx.source_owner],
+        vec![claim_receipt(
+            &fx.program_id,
+            &a.receipt,
+            &a.guard_token,
+            &a.guard_state,
+            &claim_dest.pubkey(),
+            &fx.mint.pubkey(),
+            &fx.source_owner.pubkey(),
+            &fx.payer.pubkey(),
+        )],
+    )
+    .expect("claim");
+
+    let gs = read_state(&fx, &a.guard_state);
+    assert_eq!(gs.open_receipts, 1, "one receipt still open");
+    assert_eq!(gs.held_amount, 99, "and it is still backed");
+    assert_eq!(token_amount(&fx.svm, &a.guard_token), 99);
 }

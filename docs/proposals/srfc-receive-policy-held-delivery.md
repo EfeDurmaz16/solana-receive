@@ -58,7 +58,8 @@ Normative detail: [`../SPEC.md`](../SPEC.md). Summary:
 - v0 rules = `min_amount` + source-**owner** membership (allowlist cap 8).
 - Outcomes = `failed` \| `credited` \| `held`.
 - Guard shard = `(receiver_owner, mint)` — no global guard.
-- Receipts = bounded (64), bonded, TTL, full-claim only; expiry returns to source-owner same-mint account.
+- Receipts = bonded, TTL-bounded, full-claim only; expiry returns to source-owner same-mint account. No per-shard receipt cap: it would be a permissionless denial surface protecting nobody, since the bond payer funds each receipt's rent. `GuardState.held_amount` is asserted against the vault instead.
+- Senders declare per-transfer ceilings (`max_bond_lamports`, `max_ttl_slots`) and may refuse held delivery outright.
 - Policy transfer = **9** accounts; missing metas → `failed`.
 - Transfer Hook coexistence unsupported in v0 reference.
 
@@ -69,7 +70,7 @@ Policy-enabled destinations require guard_token, guard_state, receipt, bond_paye
 
 ## 6. Security
 
-Fail-closed metas; per-receiver shards; depositor-funded bond + capacity + TTL; membership = source owner; explicit non-claim of USDC/USDT interception. Full table in SPEC §10.
+Fail-closed metas; per-receiver shards whose vault is owned by an unsignable PDA and refused as a credit destination; depositor-funded bond with protocol caps and sender-declared ceilings; TTL; asserted `held_amount` custody invariant; membership = source owner; explicit non-claim of USDC/USDT interception. Full table in SPEC §10.
 
 ## 7. Compatibility
 
@@ -81,14 +82,14 @@ Every path that derives a PDA varies by several thousand CU run to run, because 
 
 | Path | Accounts | CU (LiteSVM, range) | Ceiling |
 | --- | --- | --- | --- |
-| No-policy transfer | 4 | 2.7k | 10_000 |
-| Policy credited | 9 | 7.1k - 13.1k | 40_000 |
-| Policy held | 9 | 12.1k - 18.1k | 50_000 |
-| Missing metas | 4 (incomplete) | 2.1k | 10_000 |
-| Claim held dust | 7 | 7.7k - 15.2k | 40_000 |
-| Close expired | 6 | 7.7k - 16.7k | 40_000 |
+| No-policy transfer | 4 | 2.9k | 10_000 |
+| Policy credited | 9 | 7.2k - 14.7k | 40_000 |
+| Policy held | 9 | 15.5k - 21.5k | 50_000 |
+| Missing metas | 4 (incomplete) | 2.3k | 10_000 |
+| Claim held dust | 7 | 9.4k - 16.9k | 40_000 |
+| Close expired | 6 | 9.3k - 13.8k | 40_000 |
 
-Serialized policy-transfer tx ≈ **540B** (&lt; 1232). Contention: distinct receivers do not share a writable guard; same `(receiver, mint)` serializes. Mollusk not integrated on this toolchain.
+Serialized policy-transfer tx ≈ **556B** (&lt; 1232). Contention: distinct receivers do not share a writable guard; same `(receiver, mint)` serializes. Mollusk not integrated on this toolchain.
 
 ## 9. Reference vectors
 
@@ -97,7 +98,7 @@ Serialized policy-transfer tx ≈ **540B** (&lt; 1232). Contention: distinct rec
 | `V-NP` | No extension → ordinary credit | `golden_vectors::v_np_no_policy_credits_destination` |
 | `V-CR` | Policy accept → credited | `golden_vectors::v_cr_policy_accept_credits_destination` |
 | `V-HD` | Policy reject → held | `golden_vectors::v_hd_policy_reject_holds_to_guard` |
-| `V-FL` | Missing metas / insufficient / capacity → failed | `v_fl_*` |
+| `V-FL` | Missing metas / insufficient / sender limits → failed | `v_fl_*` |
 | `V-CL` | Claim full / wrong authority | `v_cl_*` |
 | `V-EX` | Expiry close / pre-TTL reject | `v_ex_*` |
 | `V-AU` | Allowlist membership uses source owner | `v_au_allowlist_uses_source_owner` |

@@ -5,7 +5,7 @@
 //! without a shared vector a divergence shows up only as a runtime decode failure on chain.
 //! Change one side and this suite (plus its JS twin) must change with it.
 
-use token_2022_receive::instruction::ReceiveTokenInstruction;
+use token_2022_receive::instruction::{HeldLimits, ReceiveTokenInstruction};
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
@@ -17,12 +17,20 @@ fn transfer_checked_wire_vector() {
         amount: 1,
         decimals: 6,
         unique_nonce: [9u8; 32],
+        limits: HeldLimits::unlimited(),
     }
     .pack();
-    assert_eq!(packed.len(), 42);
+    assert_eq!(packed.len(), 58);
     assert_eq!(
         hex(&packed),
-        format!("04{}{}{}", "0100000000000000", "06", "09".repeat(32))
+        format!(
+            "04{}{}{}{}{}",
+            "0100000000000000", // amount
+            "06",               // decimals
+            "09".repeat(32),    // unique_nonce
+            "ffffffffffffffff", // max_bond_lamports
+            "ffffffffffffffff", // max_ttl_slots
+        )
     );
 }
 

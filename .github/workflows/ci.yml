@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  # Pinned so a toolchain bump is a visible diff rather than a surprise red build.
+  SOLANA_VERSION: "2.2.12"
+
+jobs:
+  program:
+    name: program (fmt, clippy, host + SBF tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: rustup component add rustfmt clippy
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - run: cargo fmt --all -- --check
+
+      # The lib is the deployed artifact and is kept warning-clean. Test code is allowed
+      # arity warnings on builders, so it is linted without -D.
+      - run: cargo clippy -p token-2022-receive --lib -- -D warnings
+      - run: cargo clippy -p token-2022-receive --all-targets
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v${SOLANA_VERSION}/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      # LiteSVM suites load target/deploy/token_2022_receive.so, so this must come first.
+      - run: cargo build-sbf --manifest-path program/token-2022-receive/Cargo.toml
+
+      - run: cargo test -p token-2022-receive --no-fail-fast
+
+      - name: Compute budget report
+        run: cargo test -p token-2022-receive --test cu_ceilings -- --nocapture
+
+  client:
+    name: js client (typecheck + wire vectors)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients/js
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # The package ships TypeScript sources with no build step, so the runtime must be
+          # able to strip types natively.
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: clients/js/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test

@@ -15,6 +15,7 @@ use token_2022_receive::constants::DEFAULT_RECEIPT_TTL_SLOTS;
 use token_2022_receive::extension::receive_policy::{RecoveryAuthorityMode, SourceOwnerMode};
 use token_2022_receive::extension::tlv::account_len_with_receive_policy;
 use token_2022_receive::guard::{derive_guard_state_address, derive_guard_token_address};
+use token_2022_receive::instruction::HeldLimits;
 use token_2022_receive::instruction::{
     claim_receipt, close_expired_receipt, ensure_guard, initialize_account3,
     initialize_receive_policy, transfer_checked, PolicyTransferAccounts, ReceiveTokenInstruction,
@@ -122,6 +123,7 @@ fn hold_with_recovery(
             99,
             6,
             nonce,
+            HeldLimits::unlimited(),
             Some(PolicyTransferAccounts {
                 guard_token,
                 guard_state,

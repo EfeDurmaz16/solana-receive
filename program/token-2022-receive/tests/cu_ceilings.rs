@@ -18,6 +18,7 @@ use litesvm_helpers::{send, Fixture};
 use solana_sdk::{message::Message, signature::Signer, transaction::Transaction};
 use token_2022_receive::constants::DEFAULT_RECEIPT_TTL_SLOTS;
 use token_2022_receive::guard::{derive_guard_state_address, derive_guard_token_address};
+use token_2022_receive::instruction::HeldLimits;
 use token_2022_receive::instruction::{
     claim_receipt, close_expired_receipt, transfer_checked, PolicyTransferAccounts,
 };
@@ -88,6 +89,7 @@ fn cu_ceiling_no_policy_transfer() {
             1,
             6,
             [0u8; 32],
+            HeldLimits::unlimited(),
             None,
         )],
     )
@@ -113,6 +115,7 @@ fn cu_ceiling_policy_credited_and_held_and_missing() {
             150,
             6,
             nonce_c,
+            HeldLimits::unlimited(),
             Some(metas_c),
         )],
     )
@@ -135,6 +138,7 @@ fn cu_ceiling_policy_credited_and_held_and_missing() {
             1,
             6,
             nonce_h,
+            HeldLimits::unlimited(),
             Some(metas_h),
         )],
     )
@@ -155,6 +159,7 @@ fn cu_ceiling_policy_credited_and_held_and_missing() {
             1,
             6,
             [3u8; 32],
+            HeldLimits::unlimited(),
             None,
         )],
     )
@@ -183,6 +188,7 @@ fn cu_ceiling_claim_and_expiry() {
             1,
             6,
             nonce,
+            HeldLimits::unlimited(),
             Some(metas),
         )],
     )
@@ -226,6 +232,7 @@ fn cu_ceiling_claim_and_expiry() {
             1,
             6,
             nonce,
+            HeldLimits::unlimited(),
             Some(metas),
         )],
     )
@@ -265,6 +272,7 @@ fn serialized_tx_footprint_under_packet_limit() {
         1,
         6,
         nonce,
+        HeldLimits::unlimited(),
         Some(metas),
     );
     let tx = Transaction::new_unsigned(Message::new(&[ix], Some(&fx.payer.pubkey())));

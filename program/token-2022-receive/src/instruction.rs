@@ -54,10 +54,17 @@ pub enum ReceiveTokenInstruction {
     /// Clock and Rent are read via syscall, not passed as accounts.
     ///
     /// `unique_nonce` is client-supplied 32 bytes for receipt PDA uniqueness.
+    ///
+    /// `limits` are the sender's terms for a held outcome. The destination writes the policy,
+    /// but the sender pays for it: the bond is debited from `bond_payer` and the TTL decides how
+    /// long a rejected transfer stays locked. Without them a sender has no way to refuse a
+    /// destination that quietly raised either. `HeldLimits::unlimited()` preserves the old
+    /// behaviour, and `max_ttl_slots: 0` means "never hold me, fail instead".
     TransferChecked {
         amount: u64,
         decimals: u8,
         unique_nonce: [u8; 32],
+        limits: HeldLimits,
     } = 4,
 
     /// Full-claim held receipt → destination.
@@ -179,11 +186,17 @@ impl ReceiveTokenInstruction {
                 }
                 let mut unique_nonce = [0u8; 32];
                 unique_nonce.copy_from_slice(&rest[..32]);
-                *trailing = &rest[32..];
+                let (max_bond_lamports, rest) = unpack_u64(&rest[32..])?;
+                let (max_ttl_slots, rest) = unpack_u64(rest)?;
+                *trailing = rest;
                 Self::TransferChecked {
                     amount,
                     decimals,
                     unique_nonce,
+                    limits: HeldLimits {
+                        max_bond_lamports,
+                        max_ttl_slots,
+                    },
                 }
             }
             5 => {
@@ -252,11 +265,14 @@ impl ReceiveTokenInstruction {
                 amount,
                 decimals,
                 unique_nonce,
+                limits,
             } => {
                 buf.push(4);
                 buf.extend_from_slice(&amount.to_le_bytes());
                 buf.push(*decimals);
                 buf.extend_from_slice(unique_nonce);
+                buf.extend_from_slice(&limits.max_bond_lamports.to_le_bytes());
+                buf.extend_from_slice(&limits.max_ttl_slots.to_le_bytes());
             }
             Self::ClaimReceipt => buf.push(5),
             Self::CloseExpiredReceipt => buf.push(6),
@@ -266,6 +282,31 @@ impl ReceiveTokenInstruction {
             }
         }
         buf
+    }
+}
+
+/// Sender-declared ceilings on a held outcome.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HeldLimits {
+    pub max_bond_lamports: u64,
+    pub max_ttl_slots: u64,
+}
+
+impl HeldLimits {
+    /// Accept whatever the destination's policy says.
+    pub fn unlimited() -> Self {
+        Self {
+            max_bond_lamports: u64::MAX,
+            max_ttl_slots: u64::MAX,
+        }
+    }
+
+    /// Refuse held delivery outright: a policy rejection becomes `failed`, not `held`.
+    pub fn no_hold() -> Self {
+        Self {
+            max_bond_lamports: 0,
+            max_ttl_slots: 0,
+        }
     }
 }
 
@@ -287,7 +328,14 @@ fn unpack_u64(input: &[u8]) -> Result<(u64, &[u8]), ProgramError> {
 }
 
 // —— Instruction builders (client helpers) ——
+//
+// Positional arguments in account order, mirroring `spl_token::instruction::*` so the
+// signatures read the way a Solana developer already expects and can be checked against the
+// account lists in SPEC section 8. Unlike a constructor for persistent on-chain state, a
+// mis-ordered call here does not survive: the program re-derives every PDA and re-checks every
+// mint and owner, so a swap fails the transaction rather than writing a wrong record.
 
+#[allow(clippy::too_many_arguments)]
 pub fn initialize_mint2(
     program_id: &Pubkey,
     mint: &Pubkey,
@@ -308,6 +356,7 @@ pub fn initialize_mint2(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn initialize_account3(
     program_id: &Pubkey,
     account: &Pubkey,
@@ -325,6 +374,7 @@ pub fn initialize_account3(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn initialize_receive_policy(
     program_id: &Pubkey,
     token_account: &Pubkey,
@@ -357,6 +407,7 @@ pub fn initialize_receive_policy(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn transfer_checked(
     program_id: &Pubkey,
     source: &Pubkey,
@@ -366,6 +417,7 @@ pub fn transfer_checked(
     amount: u64,
     decimals: u8,
     unique_nonce: [u8; 32],
+    limits: HeldLimits,
     // When destination has ReceivePolicy, pass these; otherwise `None`.
     policy_accounts: Option<PolicyTransferAccounts>,
 ) -> Instruction {
@@ -373,6 +425,7 @@ pub fn transfer_checked(
         amount,
         decimals,
         unique_nonce,
+        limits,
     }
     .pack();
     let mut accounts = vec![
@@ -403,6 +456,7 @@ pub struct PolicyTransferAccounts {
     pub bond_payer: Pubkey,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn claim_receipt(
     program_id: &Pubkey,
     receipt: &Pubkey,
@@ -428,6 +482,7 @@ pub fn claim_receipt(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn close_expired_receipt(
     program_id: &Pubkey,
     receipt: &Pubkey,
@@ -451,6 +506,7 @@ pub fn close_expired_receipt(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn mint_to(
     program_id: &Pubkey,
     mint: &Pubkey,
@@ -469,6 +525,7 @@ pub fn mint_to(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn ensure_guard(
     program_id: &Pubkey,
     payer: &Pubkey,

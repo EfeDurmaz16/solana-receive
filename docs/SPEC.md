@@ -54,7 +54,7 @@ init rather than decoded permissively at transfer time.
 
 | Parameter | Value |
 | --- | --- |
-| `MAX_OPEN_RECEIPTS` | 64 per `(receiver, mint)` shard |
+| Open receipts per shard | **Unbounded** (see below) |
 | `MAX_RECEIPT_BOND_LAMPORTS` | 1 SOL (`1_000_000_000`) |
 | `MAX_RECEIPT_TTL_SLOTS` | `6_480_000` ≈ 30 days |
 | Receipt PDA | `(receiver, mint, source_owner, unique_nonce)` |
@@ -64,10 +64,20 @@ init rather than decoded permissively at transfer time.
 | Transfer Hook coexistence | Unsupported / fail in v0 (enforced: any other account extension → `failed`) |
 | Zero-amount held transfer | `failed` (would burn a shard slot while moving nothing) |
 | `Approve` / `Revoke` | Not implemented in v0; `delegate` is always unset |
+| `CloseAccount` | Not implemented; `close_authority` on a guard is a shard marker, not an authority |
 
 `receipt_bond_lamports` and `receipt_ttl_slots` are chosen by the **receiver** but paid for by
 the **sender** - the bond is debited from `bond_payer` and the TTL decides how long a rejected
-transfer stays locked. Both are therefore capped by the protocol, not left to the destination.
+transfer stays locked. The protocol caps both, and each sender may additionally declare its own
+ceilings per transfer (SPEC section 5.1). A destination can always refuse a payment; it must not
+be able to set the price of refusing.
+
+**No per-shard receipt cap.** An earlier draft bounded open receipts per `(receiver, mint)`.
+That bound was a shared, permissionless resource: anyone could exhaust it and deny every other
+sender held delivery until the receipts expired, for nothing but refundable bond. It protected
+nobody in exchange, because the bond payer funds each receipt's rent (never the receiver) and no
+instruction enumerates receipts. Each receipt being self-funding is the actual defence against
+rent griefing; `GuardState.held_amount` is what makes custody verifiable.
 
 ## 5. Outcomes
 
@@ -94,6 +104,19 @@ transaction. It is authoritative for a **CPI caller**, which reads it immediatel
 consumers of a multi-instruction transaction should read the per-instruction log line, or the
 destination balance, instead of assuming the byte belongs to their transfer.
 
+### 5.1 Sender-declared held limits
+
+`TransferChecked` carries `max_bond_lamports` and `max_ttl_slots`. If a policy rejection would
+create a receipt whose bond or TTL exceeds them, the instruction **fails** instead of holding.
+
+| Limits | Meaning |
+| --- | --- |
+| `HeldLimits::unlimited()` | Accept whatever the destination's policy says |
+| `HeldLimits::no_hold()` | Never hold: a policy rejection becomes `failed` and the sender keeps the funds |
+| Explicit values | Hold only on the sender's terms |
+
+Limits bound the **held** outcome only. A transfer the policy accepts is credited regardless.
+
 ```mermaid
 flowchart TD
   A[Policy-enabled transfer] --> B{Token-valid?}
@@ -107,7 +130,10 @@ flowchart TD
 
 - Guard token + guard-state PDAs per `(receiver_owner, mint)`.
 - On `held`, move tokens source → guard in transfer processing (no app Deposit/Escrow hop).
-- At capacity (`MAX_OPEN_RECEIPTS`), further policy-reject transfers **`failed`**.
+- `GuardState` records `open_receipts` and `held_amount`, the sum of every open receipt's amount
+  in the shard. `guard_token.amount >= held_amount` is **asserted** after every deposit and every
+  settlement, so a divergence fails closed where it is introduced rather than surfacing later as
+  one sender being unable to claim.
 
 **Custody authority (load-bearing).** The guard token account's owner field is the
 `guard_state` PDA - *not* the receiver. No keypair can sign for it, so the only debit paths
@@ -138,6 +164,9 @@ ordinary path, because `EnsureGuard` records the shard's receiver in the otherwi
 **Expiry:** after `expires_slot`, anyone may close; tokens return to a **source_owner** same-mint token account; bond **must** refund only to the recorded `bond_payer` (permissionless closer cannot redirect bond lamports).
 
 ## 8. Account resolution (policy transfer)
+
+`TransferChecked` instruction data is **58** bytes: tag, `amount`, `decimals`, `unique_nonce`,
+`max_bond_lamports`, `max_ttl_slots`.
 
 When destination has ReceivePolicy, `TransferChecked` requires **9** accounts:
 
@@ -174,7 +203,9 @@ destination owner is hostile.
 | **Receiver spends held custody directly** | Guard token authority is the `guard_state` PDA (unsignable) |
 | **Funds destroyed by crediting a guard directly** | Guard refused as a transfer endpoint and as a `MintTo` target, on every path |
 | **Policy rewritten mid-flight to seize an in-flight payment** | Policy is write-once |
-| **Receiver-set bond / TTL used to grief the sender** | Capped by `MAX_RECEIPT_BOND_LAMPORTS` / `MAX_RECEIPT_TTL_SLOTS` |
+| **Receiver-set bond / TTL used to grief the sender** | Protocol caps, plus per-transfer sender-declared limits (section 5.1) |
+| **Held delivery forced on an unwilling sender** | `HeldLimits::no_hold()` makes a policy rejection fail instead |
+| **Guard vault diverging from its open receipts** | `held_amount` asserted against the vault balance on every path |
 | **Malformed policy TLV read as "no policy"** | Parse errors fail closed; only genuine absence credits |
 | **Unknown mode byte degrading a policy to AllowAll** | Mode bytes parsed at init; unknown values rejected |
 | **Held mistaken for credited by integrators** | Per-instruction `msg!` log, plus an outcome byte in return data (`0` credited, `1` held) |
@@ -192,8 +223,7 @@ destination owner is hostile.
 | Risk | Status |
 | --- | --- |
 | A hostile destination can still *route* an ordinary transfer into held custody by setting an unsatisfiable policy. Recovery is guaranteed (claim or expiry, both bounded), but the sender's funds are delayed, and under `Receiver` / `ThirdParty` recovery the destination decides who claims. **Senders must read the outcome byte, not just transaction success.** | By design; bounded by the TTL cap |
-| Shard capacity is a shared permissionless resource: filling `MAX_OPEN_RECEIPTS` on a `(receiver, mint)` shard costs only refundable bond and denies further *held* delivery until receipts expire. Credited transfers are unaffected and the failure is closed. | Accepted for v0 |
-| `GuardState` counts open receipts but not a held total, so `guard_token.amount >= sum(open receipt amounts)` holds by construction rather than by on-chain assertion. Adding a held total plus a sweep path is the obvious v1 change. | Accepted for v0 |
+| A destination can still *route* a transfer into held custody by publishing an unsatisfiable policy. Senders that will not accept this should send with `HeldLimits::no_hold()`. | Mitigated, not removed |
 
 ## 11. Proposal path
 

@@ -14,7 +14,11 @@ How to reproduce host and on-VM evidence for `token-2022-receive`.
 | Pre-funded PDAs | `cargo build-sbf` then `cargo test -p token-2022-receive --test prefunded_pdas` | Dust on a guard or receipt address cannot brick creation |
 | Claim authority | `cargo build-sbf` then `cargo test -p token-2022-receive --test claim_authority` | All three recovery modes; unsigned authority; guard aliasing |
 | Wire vectors | `cargo test -p token-2022-receive --test wire_vectors` | Byte vectors shared with the JS client |
+| Sender limits | `cargo build-sbf` then `cargo test -p token-2022-receive --test sender_limits` | Refuse a hold; cap bond; cap TTL |
 | JS client | `cd clients/js && npm run typecheck && npm test` | Encoder vectors, pubkey length checks, account roles |
+
+CI runs all of the above on every push and pull request (`.github/workflows/ci.yml`), including
+`cargo fmt --check` and `cargo clippy --lib -D warnings`.
 | Host verify | `cargo test -p token-2022-receive --test verify_no_policy --test verify_policy_transfer --test verify_receipt_lifecycle` | Stateful AccountInfo + syscall stubs |
 | Golden vectors | `cargo test -p token-2022-receive --test golden_vectors` | sRFC §9 IDs `V-NP`…`V-AU` + nonce contract |
 | Upstream differential | `cargo test -p token-2022-receive --test upstream_differential` | Layout + no-policy overlap (not TokenzQd) |
@@ -48,12 +52,12 @@ Same dust (`1`), same mint/source:
 
 | Case | Outcome | Dest | Guard | CU (range) | Ceiling |
 | --- | --- | --- | --- | --- | --- |
-| BEFORE - no policy | credited | `1` | n/a | **2881** | 10_000 |
-| AFTER - policy, dust | held | `0` | `1` | **12.1k - 18.1k** | 50_000 |
-| AFTER - policy accepts `150` | credited | `150` | `0` | **7.1k - 13.1k** | 40_000 |
-| AFTER - metas missing | failed `Custom(10)` | `0` | - | **2069** | 10_000 |
-| Claim held dust | claim to dest | claim `1` | `0` | **7.7k - 15.2k** | 40_000 |
-| Close expired | refund source ATA | - | `0` | **7.7k - 16.7k** | 40_000 |
+| BEFORE - no policy | credited | `1` | n/a | **2896** | 10_000 |
+| AFTER - policy, dust | held | `0` | `1` | **15.5k - 21.5k** | 50_000 |
+| AFTER - policy accepts `150` | credited | `150` | `0` | **7.2k - 14.7k** | 40_000 |
+| AFTER - metas missing | failed `Custom(10)` | `0` | - | **2287** | 10_000 |
+| Claim held dust | claim to dest | claim `1` | `0` | **9.4k - 16.9k** | 40_000 |
+| Close expired | refund source ATA | - | `0` | **9.3k - 13.8k** | 40_000 |
 
 Ranges are measured over repeated runs of the same binary, not across rebuilds. Every path that
 derives a PDA varies by several thousand CU run to run because `find_program_address` searches
@@ -104,6 +108,9 @@ Distinct `(receiver, mint)` shards use distinct writable guard PDAs (no shared g
 | Held requires an initialized guard_state; credited does not | `guard_custody` |
 | Guard refused as a transfer endpoint and a MintTo target | `guard_custody` |
 | Held delivery still funds the guard | `guard_custody` |
+| `held_amount` tracks every held token across hold and claim | `guard_custody` |
+| Sender can refuse a hold, cap the bond, cap the TTL | `sender_limits` (LiteSVM, real SBF) |
+| Receipt / GuardState cannot be reinitialized as a mint or token account | `smoke` |
 
 Error codes are explicit and stable (`ReceiveTokenError` discriminants); retired variants
 leave documented gaps rather than renumbering live codes.
@@ -112,8 +119,8 @@ leave documented gaps rather than renumbering live codes.
 
 | Instruction | Accounts | Data bytes |
 | --- | --- | --- |
-| `TransferChecked` (no policy) | 4 | 42 |
-| `TransferChecked` (policy) | 9 | 42 |
+| `TransferChecked` (no policy) | 4 | 58 |
+| `TransferChecked` (policy) | 9 | 58 |
 | `ClaimReceipt` | 7 | 1 |
 | `CloseExpiredReceipt` | 6 | 1 |
 
@@ -132,12 +139,6 @@ Use when exercising RPC / Kit demos. For program semantics + CU, LiteSVM is enou
 
 ## Gaps (not yet regression-gated)
 
-1. Guard capacity / open-receipt ceiling under LiteSVM.
-2. Scheduler-faithful multi-tx contention measurement (account-lock analysis only for now).
-3. Surfpool + Kit client demo once CLI is installed.
-4. Shard-fill griefing cost (filling `MAX_OPEN_RECEIPTS` denies further held delivery until
-   receipts expire; see SPEC §10 residual risks).
-5. No CI workflow in-tree; both suites are run manually.
-6. `GuardState` tracks an open-receipt count but not a held total, so
-   `guard_token.amount >= sum(open receipts)` holds by construction rather than by assertion,
-   and tokens sent directly into a guard are unattributed (see SPEC section 10 residual risks).
+1. Scheduler-faithful multi-tx contention measurement (account-lock analysis only for now).
+2. Surfpool + Kit client demo once CLI is installed.
+4. Scheduler-faithful multi-tx contention beyond the account-lock analysis.

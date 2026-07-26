@@ -1,8 +1,5 @@
 //! Prototype defaults (documented for sRFC / README).
 
-/// Maximum open held receipts per `(receiver, mint)` guard shard.
-pub const MAX_OPEN_RECEIPTS: u8 = 64;
-
 /// Default receipt TTL ≈ 7 days at ~400 ms/slot → 1_512_000 slots.
 pub const DEFAULT_RECEIPT_TTL_SLOTS: u64 = 1_512_000;
 

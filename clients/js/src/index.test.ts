@@ -12,6 +12,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  NO_HELD_DELIVERY,
   decodeTransferOutcome,
   encodeInitializeReceivePolicy,
   encodeTransferChecked,
@@ -33,11 +34,25 @@ test("encodeU64LE rejects values outside u64", () => {
 test("TransferChecked wire vector", () => {
   const nonce = new Uint8Array(32).fill(9);
   const got = encodeTransferChecked({ amount: 1n, decimals: 6, uniqueNonce: nonce });
-  assert.equal(got.length, 42);
+  assert.equal(got.length, 58);
   assert.equal(
     hex(got),
-    "04" + "0100000000000000" + "06" + "09".repeat(32),
+    "04" +
+      "0100000000000000" + // amount
+      "06" + // decimals
+      "09".repeat(32) + // uniqueNonce
+      "ffffffffffffffff" + // maxBondLamports, defaults to unlimited
+      "ffffffffffffffff", // maxTtlSlots
   );
+
+  // Refusing held delivery outright.
+  const refused = encodeTransferChecked({
+    amount: 1n,
+    decimals: 6,
+    uniqueNonce: nonce,
+    limits: NO_HELD_DELIVERY,
+  });
+  assert.equal(hex(refused).slice(-32), "0".repeat(32));
   assert.throws(() =>
     encodeTransferChecked({ amount: 1n, decimals: 6, uniqueNonce: new Uint8Array(31) }),
   );
@@ -145,6 +160,20 @@ test("transferCheckedAccounts marks signers and writables", () => {
     }).length,
     4,
   );
+});
+
+test("PDA seed builders reject wrong-length keys", async () => {
+  const { guardTokenSeeds, guardStateSeeds, receiptSeeds } = await import("./constants.ts");
+  const ok = new Uint8Array(32);
+  const short = new Uint8Array(31);
+  // A wrong-length seed derives a different address in silence, which is worse than throwing.
+  assert.throws(() => guardTokenSeeds(short, ok));
+  assert.throws(() => guardTokenSeeds(ok, short));
+  assert.throws(() => guardStateSeeds(short, ok));
+  assert.throws(() => receiptSeeds(ok, ok, short, new Uint8Array(32)));
+  assert.throws(() => receiptSeeds(ok, ok, ok, new Uint8Array(31)));
+  assert.equal(guardTokenSeeds(ok, ok).length, 3);
+  assert.equal(receiptSeeds(ok, ok, ok, new Uint8Array(32)).length, 5);
 });
 
 test("decodeTransferOutcome distinguishes held from credited", () => {

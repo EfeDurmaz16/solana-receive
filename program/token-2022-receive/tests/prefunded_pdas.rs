@@ -14,6 +14,7 @@ use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signer;
 use solana_sdk::system_instruction;
 use token_2022_receive::guard::{derive_guard_state_address, derive_guard_token_address};
+use token_2022_receive::instruction::HeldLimits;
 use token_2022_receive::instruction::{ensure_guard, transfer_checked, PolicyTransferAccounts};
 use token_2022_receive::receipt::derive_receipt_address;
 
@@ -117,6 +118,7 @@ fn held_transfer_survives_a_prefunded_receipt_pda() {
             99,
             6,
             nonce,
+            HeldLimits::unlimited(),
             Some(PolicyTransferAccounts {
                 guard_token,
                 guard_state,

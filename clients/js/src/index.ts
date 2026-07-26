@@ -5,7 +5,6 @@
 
 export {
   PROGRAM_ID,
-  MAX_OPEN_RECEIPTS,
   DEFAULT_RECEIPT_TTL_SLOTS,
   MAX_RECEIPT_TTL_SLOTS,
   MAX_RECEIPT_BOND_LAMPORTS,
@@ -84,19 +83,48 @@ function requireByte(value: number, max: number, label: string): number {
   return value;
 }
 
+/**
+ * Sender-declared ceilings on a held outcome.
+ *
+ * The destination writes the policy but the sender pays for it: the bond is debited from
+ * `bondPayer` and the TTL decides how long a rejected transfer stays locked. Omit for
+ * `UNLIMITED_HELD_LIMITS`; use `NO_HELD_DELIVERY` to make a policy rejection fail rather than
+ * lock funds.
+ */
+export type HeldLimits = {
+  maxBondLamports: bigint | number;
+  maxTtlSlots: bigint | number;
+};
+
+const U64_MAX_LIT = (1n << 64n) - 1n;
+
+export const UNLIMITED_HELD_LIMITS: HeldLimits = {
+  maxBondLamports: U64_MAX_LIT,
+  maxTtlSlots: U64_MAX_LIT,
+};
+
+export const NO_HELD_DELIVERY: HeldLimits = {
+  maxBondLamports: 0n,
+  maxTtlSlots: 0n,
+};
+
 export function encodeTransferChecked(params: {
   amount: bigint | number;
   decimals: number;
   uniqueNonce: Uint8Array;
+  limits?: HeldLimits;
 }): Uint8Array {
   if (params.uniqueNonce.length !== 32) {
     throw new Error("uniqueNonce must be 32 bytes");
   }
-  const out = new Uint8Array(1 + 8 + 1 + 32);
+  const limits = params.limits ?? UNLIMITED_HELD_LIMITS;
+  const out = new Uint8Array(1 + 8 + 1 + 32 + 8 + 8);
   out[0] = Ix.TransferChecked;
   out.set(encodeU64LE(params.amount), 1);
   out[9] = requireByte(params.decimals, 255, "decimals");
   out.set(params.uniqueNonce, 10);
+  out.set(encodeU64LE(limits.maxBondLamports), 42);
+  out.set(encodeU64LE(limits.maxTtlSlots), 50);
   return out;
 }
 

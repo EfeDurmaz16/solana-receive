@@ -26,8 +26,6 @@ pub enum ReceiveTokenError {
     MintDecimalsMismatch = 9,
     #[error("Missing required receive-policy accounts")]
     MissingPolicyAccounts = 10,
-    #[error("Receive policy rejected and guard shard is at capacity")]
-    GuardAtCapacity = 11,
     #[error("Receive policy not enabled on destination")]
     PolicyNotEnabled = 13,
     #[error("Receipt not found or invalid")]
@@ -56,6 +54,12 @@ pub enum ReceiveTokenError {
     PolicyBondTooLarge = 26,
     #[error("Receipt TTL exceeds the protocol maximum")]
     PolicyTtlTooLarge = 27,
+    #[error("Guard vault does not cover its open receipts")]
+    GuardUnderfunded = 28,
+    #[error("Receipt bond exceeds the sender's declared maximum")]
+    BondAboveSenderLimit = 29,
+    #[error("Receipt TTL exceeds the sender's declared maximum")]
+    TtlAboveSenderLimit = 30,
 }
 
 impl From<ReceiveTokenError> for ProgramError {

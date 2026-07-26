@@ -13,6 +13,7 @@ use litesvm_helpers::{send, token_amount, Fixture};
 use solana_sdk::signature::Signer;
 use token_2022_receive::constants::DEFAULT_RECEIPT_TTL_SLOTS;
 use token_2022_receive::guard::{derive_guard_state_address, derive_guard_token_address};
+use token_2022_receive::instruction::HeldLimits;
 use token_2022_receive::instruction::{
     claim_receipt, close_expired_receipt, transfer_checked, PolicyTransferAccounts,
 };
@@ -51,6 +52,7 @@ fn held_dust(
             1,
             6,
             nonce,
+            HeldLimits::unlimited(),
             Some(PolicyTransferAccounts {
                 guard_token,
                 guard_state,

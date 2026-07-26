@@ -31,8 +31,10 @@ flowchart TD
 | `credited` | Policy accepts → `source → destination` | `0` |
 | `held` | Policy rejects → `source → guard` + receipt; instruction `Ok` | `1` |
 
-`held` **succeeds**. Senders and indexers must read the outcome byte, not just transaction
-success - otherwise a diverted payment reads as a delivered one. Held funds stay recoverable:
+`held` **succeeds**. Senders and indexers must read the outcome, not just transaction success -
+otherwise a diverted payment reads as a delivered one. A sender that will not accept held
+delivery at all can send with `HeldLimits::no_hold()`, which turns a policy rejection into a
+plain failure. Held funds stay recoverable:
 the guard's spending authority is a PDA, so the receiver cannot spend them, and recovery is
 by `ClaimReceipt` or permissionless `CloseExpiredReceipt` after the TTL. A guard is refused as
 a transfer or mint destination, since tokens reaching it outside the held path would carry no

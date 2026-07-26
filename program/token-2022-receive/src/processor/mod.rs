@@ -29,6 +29,7 @@ pub fn process_instruction(
         } => {
             msg!("Instruction: InitializeMint2");
             initialize::process_initialize_mint2(
+                program_id,
                 accounts,
                 decimals,
                 mint_authority,
@@ -69,9 +70,17 @@ pub fn process_instruction(
             amount,
             decimals,
             unique_nonce,
+            limits,
         } => {
             msg!("Instruction: TransferChecked");
-            transfer::process_transfer_checked(program_id, accounts, amount, decimals, unique_nonce)
+            transfer::process_transfer_checked(
+                program_id,
+                accounts,
+                amount,
+                decimals,
+                unique_nonce,
+                limits,
+            )
         }
         ReceiveTokenInstruction::ClaimReceipt => {
             msg!("Instruction: ClaimReceipt");

@@ -3,14 +3,20 @@
 //! Token-program scoping comes from the PDA's program id, not from a seed: these addresses
 //! only exist under this program.
 
-use crate::constants::{GUARD_SEED, GUARD_STATE_SEED, MAX_OPEN_RECEIPTS};
+use crate::constants::{GUARD_SEED, GUARD_STATE_SEED};
 use crate::error::ReceiveTokenError;
 use bytemuck::{Pod, Zeroable};
 use solana_program::{
     account_info::AccountInfo, program_error::ProgramError, program_option::COption, pubkey::Pubkey,
 };
 
-/// Companion state PDA for open-receipt accounting (not the token account itself).
+/// Companion state PDA for held-custody accounting (not the token account itself).
+///
+/// `held_amount` is the sum of the amounts of every open receipt in this shard. It exists so the
+/// custody invariant `guard_token.amount >= held_amount` can be **asserted** after each mutation
+/// rather than merely holding by construction: if any future change lets tokens leave the guard
+/// without releasing a receipt, or lets a receipt be written without a matching deposit, the very
+/// next settlement fails closed instead of paying someone else's balance out.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Pod, Zeroable)]
 pub struct GuardState {
@@ -18,8 +24,8 @@ pub struct GuardState {
     pub receiver: Pubkey,
     pub mint: Pubkey,
     pub guard_token_account: Pubkey,
-    pub open_receipts: u8,
-    pub _padding: [u8; 7],
+    pub open_receipts: u64,
+    pub held_amount: u64,
 }
 
 pub const GUARD_STATE_DISCRIMINATOR: u64 = 0x5245_4356_4755_4152; // "RECVGUAR"
@@ -75,6 +81,21 @@ pub fn assert_guard_state_pda(
     Ok(bump)
 }
 
+/// Assert the custody invariant: the vault covers every open receipt in its shard.
+///
+/// Checked after each mutation on both the deposit and the settlement paths, so a divergence
+/// surfaces where it is introduced rather than as one sender being unable to claim later.
+pub fn assert_guard_backed(
+    guard_token: &AccountInfo,
+    state: &GuardState,
+) -> Result<(), ProgramError> {
+    let guard = crate::extension::tlv::unpack_account(&guard_token.try_borrow_data()?)?;
+    if guard.amount < state.held_amount {
+        return Err(ReceiveTokenError::GuardUnderfunded.into());
+    }
+    Ok(())
+}
+
 /// Is this token account a guard vault?
 ///
 /// Guard custody has exactly two debit paths, `ClaimReceipt` and `CloseExpiredReceipt`, and both
@@ -128,25 +149,39 @@ impl GuardState {
             mint,
             guard_token_account,
             open_receipts: 0,
-            _padding: [0; 7],
+            held_amount: 0,
         }
     }
 
-    pub fn try_increment_open(&mut self) -> Result<(), ProgramError> {
-        if self.open_receipts >= MAX_OPEN_RECEIPTS {
-            return Err(ReceiveTokenError::GuardAtCapacity.into());
-        }
+    /// Account for a new held receipt.
+    ///
+    /// There is deliberately no per-shard receipt cap. A cap here would be a shared,
+    /// permissionless resource: anyone could fill it and deny every other sender held delivery
+    /// until the receipts expired, at a cost of nothing but refundable bond. It protected no
+    /// one in exchange, because the bond payer funds each receipt's rent (never the receiver)
+    /// and no instruction ever enumerates receipts. Each receipt being self-funding is the
+    /// actual defence against rent griefing.
+    pub fn record_hold(&mut self, amount: u64) -> Result<(), ProgramError> {
         self.open_receipts = self
             .open_receipts
             .checked_add(1)
             .ok_or(ReceiveTokenError::Overflow)?;
+        self.held_amount = self
+            .held_amount
+            .checked_add(amount)
+            .ok_or(ReceiveTokenError::Overflow)?;
         Ok(())
     }
 
-    pub fn try_decrement_open(&mut self) -> Result<(), ProgramError> {
+    /// Account for a receipt being claimed or expired.
+    pub fn record_release(&mut self, amount: u64) -> Result<(), ProgramError> {
         self.open_receipts = self
             .open_receipts
             .checked_sub(1)
+            .ok_or(ReceiveTokenError::Overflow)?;
+        self.held_amount = self
+            .held_amount
+            .checked_sub(amount)
             .ok_or(ReceiveTokenError::Overflow)?;
         Ok(())
     }

@@ -9,7 +9,8 @@ use crate::extension::tlv::{
 };
 use crate::guard::{
     assert_guard_state_pda, assert_guard_token_pda, derive_guard_state_address,
-    derive_guard_token_address, is_guard_token_account, GuardState, GUARD_STATE_SIZE,
+    derive_guard_token_address, is_guard_token_account, GuardState, GUARD_STATE_DISCRIMINATOR,
+    GUARD_STATE_SIZE,
 };
 use crate::processor::{create_pda_account, require_signer};
 use crate::state::{unpack_mint, AccountState, Mint, TokenAccount, ACCOUNT_SIZE, MINT_SIZE};
@@ -23,7 +24,25 @@ use solana_program::{
     pubkey::Pubkey,
 };
 
+/// Refuse to initialize over an account this program already uses for something else.
+///
+/// Mints and token accounts carry no type tag, so both initializers decide an account is free
+/// purely from its bytes parsing as uninitialized. Receipts and guard state do carry a leading
+/// discriminator, so checking it stops a Receipt or GuardState from being reinterpreted as a
+/// mint or a token account and overwritten.
+fn reject_typed_account(data: &[u8]) -> ProgramResult {
+    if data.len() < 8 {
+        return Ok(());
+    }
+    let tag = u64::from_le_bytes(data[..8].try_into().unwrap());
+    if tag == crate::receipt::RECEIPT_DISCRIMINATOR || tag == GUARD_STATE_DISCRIMINATOR {
+        return Err(ReceiveTokenError::AlreadyInUse.into());
+    }
+    Ok(())
+}
+
 pub fn process_initialize_mint2(
+    program_id: &Pubkey,
     accounts: &[AccountInfo],
     decimals: u8,
     mint_authority: Pubkey,
@@ -31,10 +50,14 @@ pub fn process_initialize_mint2(
 ) -> ProgramResult {
     let account_info_iter = &mut accounts.iter();
     let mint_info = next_account_info(account_info_iter)?;
+    if mint_info.owner != program_id {
+        return Err(ProgramError::IncorrectProgramId);
+    }
     let mut data = mint_info.try_borrow_mut_data()?;
     if data.len() < MINT_SIZE {
         return Err(ReceiveTokenError::InvalidAccountData.into());
     }
+    reject_typed_account(&data)?;
     let existing = Mint::unpack_from_slice(&data[..MINT_SIZE])?;
     if existing.is_initialized() {
         return Err(ReceiveTokenError::AlreadyInUse.into());
@@ -79,6 +102,7 @@ pub fn process_initialize_account3(
     if data.len() < ACCOUNT_SIZE {
         return Err(ReceiveTokenError::InvalidAccountData.into());
     }
+    reject_typed_account(&data)?;
     let existing = TokenAccount::unpack_from_slice(&data[..ACCOUNT_SIZE])?;
     if existing.is_initialized() {
         return Err(ReceiveTokenError::AlreadyInUse.into());
@@ -97,6 +121,7 @@ pub fn process_initialize_account3(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn process_initialize_receive_policy(
     program_id: &Pubkey,
     accounts: &[AccountInfo],

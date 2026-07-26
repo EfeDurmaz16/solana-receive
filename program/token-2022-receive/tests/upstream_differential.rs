@@ -114,6 +114,7 @@ fn reference_instruction_tags_are_local_not_tokenzqd_wire() {
         amount: 1,
         decimals: 6,
         unique_nonce: [0u8; 32],
+        limits: token_2022_receive::instruction::HeldLimits::unlimited(),
     }
     .pack();
     let mint_to = ReceiveTokenInstruction::MintTo { amount: 1 }.pack();
@@ -122,5 +123,5 @@ fn reference_instruction_tags_are_local_not_tokenzqd_wire() {
     assert_eq!(acc3[0], 1); // not upstream 18
     assert_eq!(xfer[0], 4); // not upstream 12
     assert_eq!(mint_to[0], 7); // coincidentally same as upstream MintTo tag
-    assert_eq!(xfer.len(), 42); // tag + amount + decimals + unique_nonce
+    assert_eq!(xfer.len(), 58); // tag + amount + decimals + unique_nonce + held limits
 }

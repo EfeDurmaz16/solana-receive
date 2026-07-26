@@ -13,7 +13,7 @@ Instruction tags are **reference-local** (not TokenzQd wire-compatible). Deploy 
 
 | Parameter | Value |
 | --- | --- |
-| `MAX_OPEN_RECEIPTS` | 64 per `(receiver, mint)` |
+| Open receipts per shard | unbounded; `GuardState.held_amount` backs custody |
 | Default TTL | `1_512_000` slots |
 | Allowlist cap | 8 pubkeys |
 | Expiry | Return to source-owner same-mint account; refund bond |

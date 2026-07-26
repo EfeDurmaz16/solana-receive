@@ -64,8 +64,8 @@ fn host_policy_transfer_account_count_and_ix_footprint() {
     let (no_policy, policy, _, _) = ix_account_counts();
     assert_eq!(no_policy, 4);
     assert_eq!(policy, 9);
-    assert_eq!(policy_ix_data_len(), 42);
-    let approx = 32 + 9 * 34 + 42;
+    assert_eq!(policy_ix_data_len(), 58);
+    let approx = 32 + 9 * 34 + 58;
     assert!(approx < 1232);
 }
 

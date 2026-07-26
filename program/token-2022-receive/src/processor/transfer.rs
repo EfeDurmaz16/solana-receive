@@ -6,9 +6,10 @@ use crate::extension::tlv::{
     unpack_account,
 };
 use crate::guard::{
-    assert_guard_state_pda, assert_guard_token_pda, is_guard_token_account, load_guard_state,
-    GuardState, GUARD_STATE_SIZE,
+    assert_guard_backed, assert_guard_state_pda, assert_guard_token_pda, is_guard_token_account,
+    load_guard_state, GuardState, GUARD_STATE_SIZE,
 };
+use crate::instruction::HeldLimits;
 use crate::processor::{create_pda_account, require_signer};
 use crate::receipt::{
     assert_receipt_pda, Receipt, ReceiptStatus, RECEIPT_DISCRIMINATOR, RECEIPT_SIZE,
@@ -36,6 +37,7 @@ pub fn process_transfer_checked(
     amount: u64,
     decimals: u8,
     unique_nonce: [u8; 32],
+    limits: HeldLimits,
 ) -> ProgramResult {
     let account_info_iter = &mut accounts.iter();
     let source_info = next_account_info(account_info_iter)?;
@@ -186,7 +188,7 @@ pub fn process_transfer_checked(
                 return Err(ReceiveTokenError::InvalidAccountData.into());
             }
             let gs = from_bytes_mut::<GuardState>(&mut gs_data[..GUARD_STATE_SIZE]);
-            gs.try_increment_open()?;
+            gs.record_hold(amount)?;
         }
 
         let receipt_bump = assert_receipt_pda(
@@ -211,6 +213,15 @@ pub fn process_transfer_checked(
         let rent = Rent::get()?;
         let receipt_rent = rent.minimum_balance(RECEIPT_SIZE);
         let bond = policy.receipt_bond_lamports.max(receipt_rent);
+
+        // The sender's terms, checked before anything is debited. A destination can always
+        // refuse a payment; it must not be able to set the price of being refused.
+        if bond > limits.max_bond_lamports {
+            return Err(ReceiveTokenError::BondAboveSenderLimit.into());
+        }
+        if policy.receipt_ttl_slots > limits.max_ttl_slots {
+            return Err(ReceiveTokenError::TtlAboveSenderLimit.into());
+        }
 
         let seeds: &[&[u8]] = &[
             crate::constants::RECEIPT_SEED,
@@ -268,6 +279,13 @@ pub fn process_transfer_checked(
         }
 
         move_amount(source_info, guard_token, amount, via_delegate)?;
+
+        // The deposit and the bookkeeping must agree before the instruction succeeds.
+        {
+            let gs_data = guard_state.try_borrow_data()?;
+            let gs = bytemuck::from_bytes::<GuardState>(&gs_data[..GUARD_STATE_SIZE]);
+            assert_guard_backed(guard_token, gs)?;
+        }
         held()
     }
 }

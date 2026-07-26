@@ -2,7 +2,7 @@
 //! Stateful transfer paths live in `tests/verify_*.rs`.
 
 use solana_program::pubkey::Pubkey;
-use token_2022_receive::constants::{ALLOWLIST_CAP, DEFAULT_RECEIPT_TTL_SLOTS, MAX_OPEN_RECEIPTS};
+use token_2022_receive::constants::{ALLOWLIST_CAP, DEFAULT_RECEIPT_TTL_SLOTS};
 use token_2022_receive::extension::receive_policy::{ReceivePolicy, SourceOwnerMode};
 use token_2022_receive::extension::tlv::{
     account_len_with_receive_policy, get_receive_policy, has_receive_policy,
@@ -19,7 +19,6 @@ use token_2022_receive::state::{ACCOUNT_SIZE, MINT_SIZE};
 fn sizes_match_token_layout() {
     assert_eq!(MINT_SIZE, 82);
     assert_eq!(ACCOUNT_SIZE, 165);
-    assert_eq!(MAX_OPEN_RECEIPTS, 64);
     assert_eq!(DEFAULT_RECEIPT_TTL_SLOTS, 1_512_000);
     assert_eq!(ALLOWLIST_CAP, 8);
 }
@@ -95,18 +94,41 @@ fn receipt_pda_includes_nonce_no_global_writable() {
 }
 
 #[test]
-fn guard_state_capacity() {
+fn guard_state_tracks_held_amount_not_a_capacity() {
+    // The old per-shard receipt cap was removed: it was a shared permissionless resource that
+    // anyone could exhaust to deny every other sender held delivery, while protecting nobody
+    // (the bond payer funds each receipt's rent, never the receiver). held_amount replaces it
+    // with an invariant that can actually be asserted.
     let mut gs = GuardState::new(
         Pubkey::new_unique(),
         Pubkey::new_unique(),
         Pubkey::new_unique(),
     );
-    for _ in 0..MAX_OPEN_RECEIPTS {
-        gs.try_increment_open().unwrap();
+    for i in 0..1_000u64 {
+        gs.record_hold(10).unwrap();
+        assert_eq!(gs.open_receipts, i + 1);
     }
-    assert!(gs.try_increment_open().is_err());
-    gs.try_decrement_open().unwrap();
-    gs.try_increment_open().unwrap();
+    assert_eq!(gs.held_amount, 10_000);
+
+    gs.record_release(10).unwrap();
+    assert_eq!(gs.open_receipts, 999);
+    assert_eq!(gs.held_amount, 9_990);
+
+    // Releasing more than is held, or more receipts than are open, must not wrap.
+    assert!(gs.record_release(u64::MAX).is_err());
+    let mut empty = GuardState::new(
+        Pubkey::new_unique(),
+        Pubkey::new_unique(),
+        Pubkey::new_unique(),
+    );
+    assert!(empty.record_release(0).is_err());
+    assert!(GuardState::new(
+        Pubkey::new_unique(),
+        Pubkey::new_unique(),
+        Pubkey::new_unique()
+    )
+    .record_hold(u64::MAX)
+    .is_ok());
 }
 
 #[test]
@@ -116,6 +138,7 @@ fn instruction_pack_unpack_transfer() {
         amount: 99,
         decimals: 6,
         unique_nonce: nonce,
+        limits: token_2022_receive::instruction::HeldLimits::unlimited(),
     };
     let packed = ix.pack();
     let unpacked = ReceiveTokenInstruction::unpack(&packed).unwrap();
@@ -124,6 +147,7 @@ fn instruction_pack_unpack_transfer() {
             amount,
             decimals,
             unique_nonce,
+            ..
         } => {
             assert_eq!(amount, 99);
             assert_eq!(decimals, 6);
@@ -202,6 +226,7 @@ fn unpack_rejects_non_canonical_instruction_encodings() {
             amount: 1,
             decimals: 6,
             unique_nonce: [9u8; 32],
+            limits: token_2022_receive::instruction::HeldLimits::unlimited(),
         },
     ] {
         let packed = ix.pack();
@@ -287,9 +312,7 @@ fn foreign_extensions_are_rejected_alongside_a_receive_policy() {
     );
 
     // A plain account carries no TLV region at all.
-    assert!(
-        assert_no_other_extensions(&vec![0u8; token_2022_receive::state::ACCOUNT_SIZE]).is_ok()
-    );
+    assert!(assert_no_other_extensions(&[0u8; token_2022_receive::state::ACCOUNT_SIZE]).is_ok());
 }
 
 #[test]
@@ -307,7 +330,6 @@ fn error_discriminants_are_stable() {
         (E::InvalidAccountData, 8),
         (E::MintDecimalsMismatch, 9),
         (E::MissingPolicyAccounts, 10),
-        (E::GuardAtCapacity, 11),
         (E::PolicyNotEnabled, 13),
         (E::InvalidReceipt, 14),
         (E::ReceiptNotExpired, 15),
@@ -322,6 +344,9 @@ fn error_discriminants_are_stable() {
         (E::InvalidPolicyMode, 25),
         (E::PolicyBondTooLarge, 26),
         (E::PolicyTtlTooLarge, 27),
+        (E::GuardUnderfunded, 28),
+        (E::BondAboveSenderLimit, 29),
+        (E::TtlAboveSenderLimit, 30),
     ] {
         assert_eq!(variant.clone() as u32, code, "{variant:?} moved");
     }

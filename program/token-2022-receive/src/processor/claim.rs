@@ -3,7 +3,8 @@
 use crate::error::ReceiveTokenError;
 use crate::extension::tlv::{pack_account, unpack_account};
 use crate::guard::{
-    assert_guard_state_pda, assert_guard_token_pda, load_guard_state, GuardState, GUARD_STATE_SIZE,
+    assert_guard_backed, assert_guard_state_pda, assert_guard_token_pda, load_guard_state,
+    GuardState, GUARD_STATE_SIZE,
 };
 use crate::processor::require_signer;
 use crate::receipt::{
@@ -174,7 +175,8 @@ pub fn process_claim_receipt(program_id: &Pubkey, accounts: &[AccountInfo]) -> P
     {
         let mut gs_data = guard_state.try_borrow_mut_data()?;
         let gs = from_bytes_mut::<GuardState>(&mut gs_data[..GUARD_STATE_SIZE]);
-        gs.try_decrement_open()?;
+        gs.record_release(receipt.amount)?;
+        assert_guard_backed(guard_token, gs)?;
     }
 
     close_receipt_and_refund_bond(receipt_info, bond_dest)
@@ -252,7 +254,8 @@ pub fn process_close_expired_receipt(
     {
         let mut gs_data = guard_state.try_borrow_mut_data()?;
         let gs = from_bytes_mut::<GuardState>(&mut gs_data[..GUARD_STATE_SIZE]);
-        gs.try_decrement_open()?;
+        gs.record_release(receipt.amount)?;
+        assert_guard_backed(guard_token, gs)?;
     }
 
     close_receipt_and_refund_bond(receipt_info, bond_dest)
