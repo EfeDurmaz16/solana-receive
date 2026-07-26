@@ -12,7 +12,7 @@ use crate::processor::{create_pda_account, require_signer};
 use crate::receipt::{
     assert_receipt_pda, Receipt, ReceiptStatus, RECEIPT_DISCRIMINATOR, RECEIPT_SIZE,
 };
-use crate::state::{Mint, MINT_SIZE};
+use crate::state::unpack_mint;
 use bytemuck::{bytes_of, from_bytes_mut};
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
@@ -23,7 +23,6 @@ use solana_program::{
     program::set_return_data,
     program_error::ProgramError,
     program_option::COption,
-    program_pack::Pack,
     pubkey::Pubkey,
     rent::Rent,
     system_instruction,
@@ -59,7 +58,7 @@ pub fn process_transfer_checked(
 
     {
         let mint_data = mint_info.try_borrow_data()?;
-        let mint = Mint::unpack_from_slice(&mint_data[..MINT_SIZE])?;
+        let mint = unpack_mint(&mint_data)?;
         if mint.decimals != decimals {
             return Err(ReceiveTokenError::MintDecimalsMismatch.into());
         }

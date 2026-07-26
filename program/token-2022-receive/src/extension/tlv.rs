@@ -124,8 +124,21 @@ pub fn write_receive_policy_tlv(
     Ok(())
 }
 
+/// Decode a live token account.
+///
+/// `TokenAccount::unpack_from_slice` slice-indexes and would abort the program on a short
+/// buffer, and an all-zero account parses as a valid `Uninitialized` one, which every value
+/// path would then treat as spendable or creditable. Both are rejected here so callers get a
+/// typed error rather than a panic or a phantom account.
 pub fn unpack_account(data: &[u8]) -> Result<TokenAccount, ProgramError> {
-    TokenAccount::unpack_from_slice(data)
+    if data.len() < ACCOUNT_SIZE {
+        return Err(ReceiveTokenError::InvalidAccountData.into());
+    }
+    let account = TokenAccount::unpack_from_slice(&data[..ACCOUNT_SIZE])?;
+    if !account.is_initialized() {
+        return Err(ReceiveTokenError::InvalidAccountData.into());
+    }
+    Ok(account)
 }
 
 pub fn pack_account(account: &TokenAccount, data: &mut [u8]) -> Result<(), ProgramError> {

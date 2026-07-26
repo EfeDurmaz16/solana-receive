@@ -145,6 +145,18 @@ impl Pack for TokenAccount {
     }
 }
 
+/// Decode a live mint, rejecting short buffers instead of aborting the program.
+pub fn unpack_mint(data: &[u8]) -> Result<Mint, ProgramError> {
+    if data.len() < MINT_SIZE {
+        return Err(ReceiveTokenError::InvalidAccountData.into());
+    }
+    let mint = Mint::unpack_from_slice(&data[..MINT_SIZE])?;
+    if !mint.is_initialized() {
+        return Err(ReceiveTokenError::InvalidAccountData.into());
+    }
+    Ok(mint)
+}
+
 fn unpack_coption_key(src: &[u8; 36]) -> Result<COption<Pubkey>, ProgramError> {
     let (tag, body) = array_refs![src, 4, 32];
     match *tag {

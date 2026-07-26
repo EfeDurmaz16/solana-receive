@@ -12,7 +12,7 @@ use crate::guard::{
     derive_guard_token_address, GuardState, GUARD_STATE_SIZE,
 };
 use crate::processor::{create_pda_account, require_signer};
-use crate::state::{AccountState, Mint, TokenAccount, ACCOUNT_SIZE, MINT_SIZE};
+use crate::state::{unpack_mint, AccountState, Mint, TokenAccount, ACCOUNT_SIZE, MINT_SIZE};
 use bytemuck::from_bytes_mut;
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
@@ -73,10 +73,7 @@ pub fn process_initialize_account3(
     if mint_data.len() < MINT_SIZE {
         return Err(ReceiveTokenError::InvalidAccountData.into());
     }
-    let mint = Mint::unpack_from_slice(&mint_data[..MINT_SIZE])?;
-    if !mint.is_initialized() {
-        return Err(ReceiveTokenError::InvalidAccountData.into());
-    }
+    let _ = unpack_mint(&mint_data)?;
 
     let mut data = account_info.try_borrow_mut_data()?;
     if data.len() < ACCOUNT_SIZE {
@@ -260,15 +257,23 @@ pub fn process_ensure_guard(program_id: &Pubkey, accounts: &[AccountInfo]) -> Pr
     Ok(())
 }
 
-pub fn process_mint_to(accounts: &[AccountInfo], amount: u64) -> ProgramResult {
+pub fn process_mint_to(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    amount: u64,
+) -> ProgramResult {
     let account_info_iter = &mut accounts.iter();
     let mint_info = next_account_info(account_info_iter)?;
     let account_info = next_account_info(account_info_iter)?;
     let authority_info = next_account_info(account_info_iter)?;
     require_signer(authority_info)?;
 
+    if mint_info.owner != program_id || account_info.owner != program_id {
+        return Err(ProgramError::IncorrectProgramId);
+    }
+
     let mut mint_data = mint_info.try_borrow_mut_data()?;
-    let mut mint = Mint::unpack_from_slice(&mint_data[..MINT_SIZE])?;
+    let mut mint = unpack_mint(&mint_data)?;
     match mint.mint_authority {
         COption::Some(auth) if auth == *authority_info.key => {}
         _ => return Err(ReceiveTokenError::OwnerMismatch.into()),

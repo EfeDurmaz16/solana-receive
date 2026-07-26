@@ -14,9 +14,7 @@ use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signer;
 use solana_sdk::system_instruction;
 use token_2022_receive::guard::{derive_guard_state_address, derive_guard_token_address};
-use token_2022_receive::instruction::{
-    ensure_guard, transfer_checked, PolicyTransferAccounts,
-};
+use token_2022_receive::instruction::{ensure_guard, transfer_checked, PolicyTransferAccounts};
 use token_2022_receive::receipt::derive_receipt_address;
 
 fn dust(fx: &mut Fixture, target: &Pubkey, lamports: u64) {
@@ -131,6 +129,9 @@ fn held_transfer_survives_a_prefunded_receipt_pda() {
 
     assert_eq!(token_amount(&fx.svm, &guard_token), 99);
     let acct = fx.svm.get_account(&receipt).expect("receipt");
-    assert!(acct.lamports > 1, "receipt funded to at least rent exemption");
+    assert!(
+        acct.lamports > 1,
+        "receipt funded to at least rent exemption"
+    );
     assert_eq!(acct.owner, fx.program_id, "receipt owned by the program");
 }

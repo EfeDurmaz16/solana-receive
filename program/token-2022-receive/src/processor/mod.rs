@@ -83,7 +83,7 @@ pub fn process_instruction(
         }
         ReceiveTokenInstruction::MintTo { amount } => {
             msg!("Instruction: MintTo");
-            initialize::process_mint_to(accounts, amount)
+            initialize::process_mint_to(program_id, accounts, amount)
         }
     }
 }

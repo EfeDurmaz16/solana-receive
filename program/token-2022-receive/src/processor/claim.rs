@@ -6,7 +6,9 @@ use crate::guard::{
     assert_guard_state_pda, assert_guard_token_pda, load_guard_state, GuardState, GUARD_STATE_SIZE,
 };
 use crate::processor::require_signer;
-use crate::receipt::{Receipt, ReceiptStatus, RECEIPT_DISCRIMINATOR, RECEIPT_SIZE};
+use crate::receipt::{
+    assert_receipt_pda, Receipt, ReceiptStatus, RECEIPT_DISCRIMINATOR, RECEIPT_SIZE,
+};
 use bytemuck::{from_bytes, from_bytes_mut};
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
@@ -32,6 +34,17 @@ fn load_open_receipt(
     if receipt.discriminator != RECEIPT_DISCRIMINATOR || !receipt.is_open() {
         return Err(ReceiveTokenError::InvalidReceipt.into());
     }
+    // Authenticate the account by its address, not just its contents: re-derive the canonical
+    // PDA from the fields the receipt itself claims. The transfer path derives it at creation
+    // time, so a receipt that does not sit at its own address is not one this program wrote.
+    assert_receipt_pda(
+        receipt_info,
+        &receipt.receiver_owner,
+        &receipt.mint,
+        &receipt.source_owner,
+        &receipt.unique_nonce,
+        program_id,
+    )?;
     Ok(receipt)
 }
 
@@ -44,7 +57,24 @@ fn validate_guard_accounts(
 ) -> Result<(), ProgramError> {
     assert_guard_token_pda(guard_token, receiver_owner, mint, program_id)?;
     assert_guard_state_pda(guard_state, receiver_owner, mint, program_id)?;
-    load_guard_state(guard_state, guard_token.key, receiver_owner, mint)
+    load_guard_state(guard_state, guard_token.key, receiver_owner, mint)?;
+    // Checked for both settlement paths rather than only for claim, so validation stays
+    // symmetric between the authorized and the permissionless closer.
+    let guard = unpack_account(&guard_token.try_borrow_data()?)?;
+    if guard.mint != *mint {
+        return Err(ReceiveTokenError::MintMismatch.into());
+    }
+    Ok(())
+}
+
+/// The guard debit and the payout credit run in two separate borrows of account data. If the
+/// two accounts are the same, the writes cancel to a no-op while the receipt is still closed
+/// and the bond refunded, stranding the tokens with no open receipt to recover them.
+fn require_distinct_payout(payout: &AccountInfo, guard_token: &AccountInfo) -> ProgramResult {
+    if payout.key == guard_token.key {
+        return Err(ReceiveTokenError::SelfTransferForbidden.into());
+    }
+    Ok(())
 }
 
 fn require_bond_dest(bond_dest: &AccountInfo, bond_payer: &Pubkey) -> Result<(), ProgramError> {
@@ -104,6 +134,10 @@ pub fn process_claim_receipt(program_id: &Pubkey, accounts: &[AccountInfo]) -> P
         &receipt.mint,
     )?;
 
+    require_distinct_payout(claim_destination, guard_token)?;
+    if claim_destination.owner != program_id {
+        return Err(ProgramError::IncorrectProgramId);
+    }
     {
         let dest_data = claim_destination.try_borrow_data()?;
         let dest = unpack_account(&dest_data)?;
@@ -118,9 +152,6 @@ pub fn process_claim_receipt(program_id: &Pubkey, accounts: &[AccountInfo]) -> P
     {
         let mut gdata = guard_token.try_borrow_mut_data()?;
         let mut guard = unpack_account(&gdata)?;
-        if guard.mint != receipt.mint {
-            return Err(ReceiveTokenError::MintMismatch.into());
-        }
         if guard.amount < receipt.amount {
             return Err(ReceiveTokenError::InsufficientFunds.into());
         }
@@ -178,6 +209,10 @@ pub fn process_close_expired_receipt(
         &receipt.mint,
     )?;
 
+    require_distinct_payout(source_owner_ata, guard_token)?;
+    if source_owner_ata.owner != program_id {
+        return Err(ProgramError::IncorrectProgramId);
+    }
     {
         let ata_data = source_owner_ata.try_borrow_data()?;
         let ata = unpack_account(&ata_data)?;
