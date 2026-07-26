@@ -29,14 +29,16 @@ Operator smoke checklist and declared-ID vs local keypair story: **[OPERATOR.md]
 CI runs the automated suites above (everything except Surfpool) on every push and pull request
 (`.github/workflows/ci.yml`), including `cargo fmt --check` and `cargo clippy --lib -- -D warnings`.
 Surfpool remains a local/manual evidence path until runners carry the CLI pin.
-Full package:
+Full package (`build-sbf` before LiteSVM tests — the suites load `target/deploy/*.so`):
 
 ```bash
 export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
-cargo test -p token-2022-receive
-cargo build-sbf --manifest-path program/token-2022-receive/Cargo.toml
+cargo build-sbf --manifest-path program/token-2022-receive/Cargo.toml -- --locked
+cargo test -p token-2022-receive --locked
 cargo test -p token-2022-receive --test litesvm_before_after --test litesvm_lifecycle -- --nocapture
 ```
+
+Or: `./scripts/smoke.sh` then the LiteSVM / CU commands in [OPERATOR.md](./OPERATOR.md).
 
 Host stubs are not CU-faithful. Prefer LiteSVM for compute numbers.
 

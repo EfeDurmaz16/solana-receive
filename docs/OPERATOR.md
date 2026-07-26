@@ -14,7 +14,7 @@ outreach, or grant packaging.
 | Address | Meaning |
 | --- | --- |
 | `GyrTVV4hbcuzJuSz86FNq7K2UVAoSJQtcgHTVTz1hPPq` | `declare_id!` in the program source and the Kit client's default `PROGRAM_ID` |
-| `solana-keygen pubkey target/deploy/token_2022_receive-keypair.json` | Pubkey `cargo build-sbf` will deploy to **unless** you replace that keypair |
+| `solana-keygen pubkey target/deploy/token_2022_receive-keypair.json` | Deploy keypair pubkey that `cargo build-sbf` writes under `target/deploy/`; used by `solana program deploy --program-id …` unless you replace that keypair |
 
 These often **differ**. That is expected on a fresh clone.
 
@@ -33,14 +33,19 @@ These often **differ**. That is expected on a fresh clone.
 
 **If you need the declared ID on a localnet**
 
-1. Obtain or grind a keypair whose pubkey is exactly `GyrTVV4hbcuzJuSz86FNq7K2UVAoSJQtcgHTVTz1hPPq`.
-2. Replace `target/deploy/token_2022_receive-keypair.json` with it (or pass it to
+1. Use the **original secret keypair** for `GyrTVV4hbcuzJuSz86FNq7K2UVAoSJQtcgHTVTz1hPPq`.
+   Grinding that exact 32-byte address is not a practical operator path.
+2. If you do not control that secret, regenerate a new program ID and update `declare_id!`,
+   the IDL, generated client defaults, and docs together — do not pretend the published
+   address is deployable without its key.
+3. With the matching keypair in hand, replace
+   `target/deploy/token_2022_receive-keypair.json` (or pass it to
    `solana program deploy --program-id`).
-3. Rebuild / redeploy so the on-chain executable and the client default ID agree.
-4. Then `RECEIVE_PROGRAM_ID` can be omitted and the default Kit address matches the chain.
+4. Redeploy so the on-chain executable and the client default ID agree. Then
+   `RECEIVE_PROGRAM_ID` can be omitted.
 
-Until step 1 exists in your custody, treat declared ID as the **published identity** of the
-reference and local keypair deploys as **fidelity evidence** under an override.
+Until the matching secret is in your custody, treat declared ID as the **published identity**
+of the reference and local keypair deploys as **fidelity evidence** under an override.
 
 ## Smoke checklist
 
@@ -55,21 +60,27 @@ rustc --version
 node --version            # 22+ recommended for strip-types client tests
 ```
 
-### 1. Automated semantic gate (required)
+### 1. Automated gate (required)
 
-```bash
-cargo build-sbf --manifest-path program/token-2022-receive/Cargo.toml
-cargo test -p token-2022-receive
-cd clients/js && npm ci && npm run typecheck && npm test && cd ../..
-```
-
-Or the wrapper:
+Wrapper aligned with CI (fmt, clippy lib, locked build-sbf/tests, codegen:check, JS):
 
 ```bash
 ./scripts/smoke.sh
 ```
 
-Expect: all Rust tests pass; JS reports 14 passing (or current count in CI).
+Expect: script exits 0; JS reports 14 passing (or the current count in CI). Surfpool is
+**not** included — that remains §3.
+
+Manual equivalent (same order as CI):
+
+```bash
+cargo fmt --all -- --check
+cargo clippy -p token-2022-receive --lib -- -D warnings
+cargo build-sbf --manifest-path program/token-2022-receive/Cargo.toml -- --locked
+cargo test -p token-2022-receive --locked
+npm ci && npm run codegen:check
+cd clients/js && npm ci && npm run typecheck && npm test && cd ../..
+```
 
 ### 2. LiteSVM lifecycle + CU (required for CU claims)
 
