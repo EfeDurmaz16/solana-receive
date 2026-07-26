@@ -294,15 +294,16 @@ export type PreviewedOutcome = "credited" | "held" | "failed";
  *   the rent floor refuses a hold even when the policy asks for nothing;
  * - a zero-amount hold is rejected outright.
  *
- * Pass `rentExemptReceiptLamports` from `getMinimumBalanceForRentExemption(RECEIPT_SIZE)` to get
- * the bond floor right; omitting it previews the un-floored bond and can disagree with the chain.
+ * `rentExemptReceiptLamports` is required, from `getMinimumBalanceForRentExemption(RECEIPT_SIZE)`.
+ * It is not optional because a default of zero silently reproduces the un-floored preview this
+ * argument exists to prevent.
  */
 export function previewOutcome(params: {
   policy: ReceivePolicy | null;
   amount: bigint | number;
   sourceOwner: Uint8Array;
   limits: HeldLimits;
-  rentExemptReceiptLamports?: bigint | number;
+  rentExemptReceiptLamports: bigint | number;
 }): PreviewedOutcome {
   const { policy } = params;
   const amount = BigInt(params.amount);
@@ -319,7 +320,7 @@ export function previewOutcome(params: {
   // From here the policy rejects, so the outcome is either a hold or a failure.
   if (amount === 0n) return "failed";
 
-  const rentFloor = BigInt(params.rentExemptReceiptLamports ?? 0);
+  const rentFloor = BigInt(params.rentExemptReceiptLamports);
   const bond =
     policy.receiptBondLamports > rentFloor ? policy.receiptBondLamports : rentFloor;
   if (

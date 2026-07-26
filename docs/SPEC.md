@@ -158,6 +158,23 @@ otherwise have reported `credited` for it. Guards are recognised in constant tim
 ordinary path, because `EnsureGuard` records the shard's receiver in the otherwise unused
 `close_authority` field as a marker and nothing else in this program ever sets one.
 
+**Layout versions and upgrade scope.** `GuardState` and `Receipt` each carry a `version`,
+checked on load. Without one a future field addition is detectable only as a length error, and a
+same-size change is not detectable at all, so live accounts would be silently reinterpreted.
+
+**No migration is provided, and `EnsureGuard` is not an upgrade path.** This program has never
+been deployed, so there is no legacy state to migrate. An account whose layout this version does
+not recognise is refused with `UnsupportedStateVersion` and left untouched. `EnsureGuard`
+validates an existing shard *before* it repairs the vault, so it can never produce the dangerous
+pair: a vault whose authority has been moved to the PDA alongside a companion state that hold,
+claim and close all reject, which would leave the balance unspendable and unrecoverable at once.
+The version fields exist so that a post-deploy change *can* be migrated, and so that a mismatch
+fails closed rather than being misread.
+
+Reconstructing `held_amount` for a pre-version shard is not possible on chain, because receipts
+are not enumerable and the vault balance is only an upper bound on the obligation. A migration
+therefore needs a defined semantics for that field before it can be written.
+
 ## 7. Receipt lifecycle
 
 **Create (on held):** record amount, mint, source/dest accounts, owners, recovery mode, slots, bond, bond payer, nonce.

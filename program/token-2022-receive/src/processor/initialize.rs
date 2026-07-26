@@ -236,7 +236,8 @@ pub fn process_ensure_guard(program_id: &Pubkey, accounts: &[AccountInfo]) -> Pr
     //
     // No migration is provided. This program has never been deployed, so there is no legacy
     // state to migrate; the version fields exist so that a post-deploy layout change CAN be
-    // migrated, and so a mismatch fails closed instead of being misread. See SPEC section 6.
+    // migrated, and so a mismatch fails closed instead of being misread. See SPEC section 6,
+    // "Layout versions and upgrade scope".
     if !guard_state.data_is_empty() {
         let data = guard_state.try_borrow_data()?;
         if data.len() != GUARD_STATE_SIZE {

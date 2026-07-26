@@ -113,9 +113,10 @@ Distinct `(receiver, mint)` shards use distinct writable guard PDAs (no shared g
 | Held requires an initialized guard_state; credited does not | `guard_custody` |
 | Guard refused as a transfer endpoint and a MintTo target | `guard_custody` |
 | Legacy `GuardState` / version-0 `Receipt` refused, state left untouched | `legacy_state` (LiteSVM, real SBF) |
-| Foreign extension rejected with no policy present | `smoke` |
+| Foreign extension rejected with no policy present | `smoke` (walker), `legacy_state` (transfer) |
 | Sender bond ceiling compared against the rent-floored bond | `sender_limits` |
-| Protocol caps re-checked when a receipt is created | `sender_limits`, `policy_bounds` |
+| Protocol caps re-checked when a receipt is created, on a planted policy | `legacy_state` (transfer level) |
+| Foreign extension rejected by a real transfer, with no policy present | `legacy_state` (transfer level) |
 | Held delivery still funds the guard | `guard_custody` |
 | `held_amount` tracks every held token across hold and claim | `guard_custody` |
 | Sender can refuse a hold, cap the bond, cap the TTL | `sender_limits` (LiteSVM, real SBF) |

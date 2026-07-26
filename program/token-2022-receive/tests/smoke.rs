@@ -348,6 +348,7 @@ fn error_discriminants_are_stable() {
         (E::BondAboveSenderLimit, 29),
         (E::TtlAboveSenderLimit, 30),
         (E::RecoveryModeAboveSenderLimit, 31),
+        (E::UnsupportedStateVersion, 32),
     ] {
         assert_eq!(variant.clone() as u32, code, "{variant:?} moved");
     }

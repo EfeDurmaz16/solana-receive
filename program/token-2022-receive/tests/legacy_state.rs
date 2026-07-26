@@ -13,8 +13,14 @@ mod litesvm_helpers;
 use litesvm_helpers::{send, token_amount, Fixture};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signer;
+use token_2022_receive::constants::{
+    DEFAULT_RECEIPT_TTL_SLOTS, MAX_RECEIPT_BOND_LAMPORTS, MAX_RECEIPT_TTL_SLOTS,
+};
 use token_2022_receive::error::ReceiveTokenError;
-use token_2022_receive::extension::tlv::{pack_account, unpack_account};
+use token_2022_receive::extension::receive_policy::ReceivePolicy;
+use token_2022_receive::extension::tlv::{
+    account_len_with_receive_policy, pack_account, unpack_account, write_receive_policy_tlv,
+};
 use token_2022_receive::guard::{
     derive_guard_state_address, derive_guard_token_address, GUARD_STATE_SIZE,
 };
@@ -296,4 +302,151 @@ fn a_repaired_vault_still_needs_a_readable_shard() {
 
     let after = unpack_account(&fx.svm.get_account(&held.guard_token).unwrap().data).unwrap();
     assert_eq!(after.owner, fx.dest_owner.pubkey(), "vault unchanged");
+}
+
+/// Overwrite a destination's account data with a hand-built policy, bypassing
+/// `InitializeReceivePolicy` entirely. That is the only way to reach a policy blob carrying a
+/// value the current init would reject: the TLV has no version of its own, so a bond or TTL
+/// written by a build that predates the protocol caps would look exactly like this.
+fn plant_policy(fx: &mut Fixture, account: &Pubkey, policy: &ReceivePolicy) {
+    let mut acct = fx.svm.get_account(account).expect("account");
+    let need = account_len_with_receive_policy();
+    if acct.data.len() < need {
+        acct.data.resize(need, 0);
+    }
+    write_receive_policy_tlv(&mut acct.data, policy).unwrap();
+    fx.svm.set_account(*account, acct).unwrap();
+    fx.svm.expire_blockhash();
+}
+
+fn hold_into(
+    fx: &mut Fixture,
+    dest: &Pubkey,
+    receiver: &Pubkey,
+    nonce: [u8; 32],
+) -> litesvm::types::TransactionResult {
+    let (guard_token, _) = derive_guard_token_address(receiver, &fx.mint.pubkey(), &fx.program_id);
+    let (guard_state, _) = derive_guard_state_address(receiver, &fx.mint.pubkey(), &fx.program_id);
+    let (receipt, _) = derive_receipt_address(
+        receiver,
+        &fx.mint.pubkey(),
+        &fx.source_owner.pubkey(),
+        &nonce,
+        &fx.program_id,
+    );
+    let r = send(
+        &mut fx.svm,
+        &fx.payer,
+        &[&fx.source_owner],
+        vec![transfer_checked(
+            &fx.program_id,
+            &fx.source.pubkey(),
+            &fx.mint.pubkey(),
+            dest,
+            &fx.source_owner.pubkey(),
+            99,
+            6,
+            nonce,
+            HeldLimits::unlimited(),
+            Some(PolicyTransferAccounts {
+                guard_token,
+                guard_state,
+                receipt,
+                bond_payer: fx.payer.pubkey(),
+            }),
+        )],
+    );
+    fx.svm.expire_blockhash();
+    r
+}
+
+#[test]
+fn protocol_caps_are_rechecked_when_a_receipt_is_created() {
+    // InitializeReceivePolicy rejects an over-cap bond, so the only policy that can carry one is
+    // a blob this program did not write. The held path must not honour it.
+    let mut fx = Fixture::boot(1_000).with_policy_dest(100);
+    let receiver = fx.dest_owner.pubkey();
+    let dest = fx.dest.pubkey();
+
+    let mut over_bond = ReceivePolicy {
+        min_amount: 100,
+        receipt_bond_lamports: MAX_RECEIPT_BOND_LAMPORTS + 1,
+        ..ReceivePolicy::default()
+    };
+    over_bond.receipt_ttl_slots = DEFAULT_RECEIPT_TTL_SLOTS;
+    plant_policy(&mut fx, &dest, &over_bond);
+
+    let err = hold_into(&mut fx, &dest, &receiver, [151u8; 32])
+        .expect_err("an over-cap bond must be refused at hold time, not just at init");
+    assert_eq!(
+        err_code(&err),
+        Some(ReceiveTokenError::PolicyBondTooLarge as u32)
+    );
+
+    let over_ttl = ReceivePolicy {
+        min_amount: 100,
+        receipt_ttl_slots: MAX_RECEIPT_TTL_SLOTS + 1,
+        ..ReceivePolicy::default()
+    };
+    plant_policy(&mut fx, &dest, &over_ttl);
+    let err = hold_into(&mut fx, &dest, &receiver, [152u8; 32])
+        .expect_err("an over-cap TTL must be refused at hold time");
+    assert_eq!(
+        err_code(&err),
+        Some(ReceiveTokenError::PolicyTtlTooLarge as u32)
+    );
+
+    // A policy within the caps still holds, so the recheck is not simply rejecting everything.
+    let ok = ReceivePolicy {
+        min_amount: 100,
+        receipt_ttl_slots: DEFAULT_RECEIPT_TTL_SLOTS,
+        ..ReceivePolicy::default()
+    };
+    plant_policy(&mut fx, &dest, &ok);
+    hold_into(&mut fx, &dest, &receiver, [153u8; 32]).expect("a policy within the caps holds");
+    let (guard_token, _) = derive_guard_token_address(&receiver, &fx.mint.pubkey(), &fx.program_id);
+    assert_eq!(token_amount(&fx.svm, &guard_token), 99);
+}
+
+#[test]
+fn a_transfer_to_a_foreign_extension_account_fails() {
+    // SPEC section 9 at transfer level, not just via the helper: a destination carrying an
+    // extension this version does not define has undefined semantics here, and with no
+    // ReceivePolicy present it would otherwise take the ordinary credit path.
+    let mut fx = Fixture::boot(1_000).with_plain_dest();
+    let dest = fx.dest.pubkey();
+    let before = token_amount(&fx.svm, &dest);
+
+    let mut acct = fx.svm.get_account(&dest).expect("dest");
+    let base = token_2022_receive::state::ACCOUNT_SIZE;
+    acct.data.resize(base + 1 + 4 + 8, 0);
+    acct.data[base] = 2; // ACCOUNT_TYPE_ACCOUNT
+    acct.data[base + 1..base + 3].copy_from_slice(&7u16.to_le_bytes()); // not ReceivePolicy
+    acct.data[base + 3..base + 5].copy_from_slice(&4u16.to_le_bytes());
+    fx.svm.set_account(dest, acct).unwrap();
+    fx.svm.expire_blockhash();
+
+    let err = send(
+        &mut fx.svm,
+        &fx.payer,
+        &[&fx.source_owner],
+        vec![transfer_checked(
+            &fx.program_id,
+            &fx.source.pubkey(),
+            &fx.mint.pubkey(),
+            &dest,
+            &fx.source_owner.pubkey(),
+            10,
+            6,
+            [154u8; 32],
+            HeldLimits::unlimited(),
+            None,
+        )],
+    )
+    .expect_err("a foreign extension must fail the transfer, with or without a policy");
+    assert_eq!(
+        err_code(&err),
+        Some(ReceiveTokenError::UnsupportedExtension as u32)
+    );
+    assert_eq!(token_amount(&fx.svm, &dest), before, "nothing credited");
 }

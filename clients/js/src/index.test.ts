@@ -254,8 +254,15 @@ test("previewOutcome tells a sender what will happen before paying", () => {
     receiptTtlSlots: 1_512_000n,
     allowlist: [sender],
   };
+  const rent = 2_400_000n;
   const preview = (amount: bigint, who: Uint8Array, limits = UNLIMITED_HELD_LIMITS) =>
-    previewOutcome({ policy, amount, sourceOwner: who, limits });
+    previewOutcome({
+      policy,
+      amount,
+      sourceOwner: who,
+      limits,
+      rentExemptReceiptLamports: rent,
+    });
 
   assert.equal(preview(150n, sender), "credited");
   assert.equal(preview(50n, sender), "held"); // below minAmount
@@ -267,7 +274,13 @@ test("previewOutcome tells a sender what will happen before paying", () => {
   assert.equal(preview(0n, sender), "failed");
   // No policy at all: an ordinary credit.
   assert.equal(
-    previewOutcome({ policy: null, amount: 1n, sourceOwner: sender, limits: NO_HELD_DELIVERY }),
+    previewOutcome({
+      policy: null,
+      amount: 1n,
+      sourceOwner: sender,
+      limits: NO_HELD_DELIVERY,
+      rentExemptReceiptLamports: rent,
+    }),
     "credited",
   );
 });
@@ -288,9 +301,18 @@ test("previewOutcome applies the rent floor to the bond", () => {
   const rent = 2_400_000n;
   const limits = { maxBondLamports: 1_000n, maxTtlSlots: 10_000n, maxRecoveryMode: 2 };
 
-  // Without the floor the raw 0 bond looks acceptable.
-  assert.equal(previewOutcome({ policy, amount: 1n, sourceOwner: sender, limits }), "held");
-  // With it, the sender's 1_000 lamport ceiling cannot cover rent.
+  // A zero rent floor is what the un-floored preview used to assume, and it is wrong.
+  assert.equal(
+    previewOutcome({
+      policy,
+      amount: 1n,
+      sourceOwner: sender,
+      limits,
+      rentExemptReceiptLamports: 0n,
+    }),
+    "held",
+  );
+  // With the real floor, the sender's 1_000 lamport ceiling cannot cover rent.
   assert.equal(
     previewOutcome({
       policy,
