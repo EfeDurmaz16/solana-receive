@@ -5,7 +5,7 @@
   "description": "Workspace scripts for Codama client generation (program lives under program/)",
   "scripts": {
     "codegen": "codama run js -c codama.mjs && node scripts/codegen-postprocess.mjs",
-    "codegen:check": "npm run codegen && git diff --exit-code -- clients/js/src/generated"
+    "codegen:check": "sh -c 'untracked=\"$(git ls-files --others --exclude-standard -- clients/js/src/generated)\"; test -z \"$untracked\" || { echo \"$untracked\"; exit 1; }' && npm run codegen && git diff --exit-code -- clients/js/src/generated && sh -c 'status=\"$(git status --porcelain -- clients/js/src/generated)\"; test -z \"$status\" || { echo \"$status\"; exit 1; }'"
   },
   "devDependencies": {
     "@codama/renderers-js": "2.3.0",
