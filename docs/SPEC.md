@@ -209,6 +209,16 @@ stateDiagram-v2
   ClosedExpired --> [*]: receipt closed\nbond refunded
 ```
 
+```mermaid
+stateDiagram-v2
+  [*] --> Open: held transfer creates receipt
+  Open --> Claimed: ClaimReceipt\nrecovery authority signs
+  Open --> Expired: current slot > expires_slot
+  Expired --> ClosedExpired: CloseExpiredReceipt\nany signer
+  Claimed --> [*]: receipt closed\nbond refunded
+  ClosedExpired --> [*]: receipt closed\nbond refunded
+```
+
 ## 8. Account resolution (policy transfer)
 
 `TransferChecked` instruction data is **59** bytes: tag, `amount`, `decimals`, `unique_nonce`,
