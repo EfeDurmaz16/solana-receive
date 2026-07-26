@@ -187,3 +187,46 @@ fn malformed_policy_tlv_errors_instead_of_reporting_no_policy() {
     data[tlv_len_at..tlv_len_at + 2].copy_from_slice(&u16::MAX.to_le_bytes());
     assert!(has_receive_policy(&data).is_err());
 }
+
+#[test]
+fn unpack_rejects_non_canonical_instruction_encodings() {
+    use token_2022_receive::instruction::ReceiveTokenInstruction;
+
+    // Round-trip: every packed form must decode back.
+    for ix in [
+        ReceiveTokenInstruction::EnsureGuard,
+        ReceiveTokenInstruction::ClaimReceipt,
+        ReceiveTokenInstruction::CloseExpiredReceipt,
+        ReceiveTokenInstruction::MintTo { amount: 7 },
+        ReceiveTokenInstruction::TransferChecked {
+            amount: 1,
+            decimals: 6,
+            unique_nonce: [9u8; 32],
+        },
+    ] {
+        let packed = ix.pack();
+        assert_eq!(ReceiveTokenInstruction::unpack(&packed).unwrap(), ix);
+
+        // Trailing bytes must not be silently ignored: otherwise there is no canonical wire
+        // form and a mis-encoded instruction is reinterpreted rather than rejected.
+        let mut extra = packed.clone();
+        extra.push(0);
+        assert!(
+            ReceiveTokenInstruction::unpack(&extra).is_err(),
+            "trailing byte accepted for {ix:?}"
+        );
+    }
+
+    // A freeze-authority flag pack can never emit must be rejected.
+    let mut mint_ix = ReceiveTokenInstruction::InitializeMint2 {
+        decimals: 6,
+        mint_authority: Pubkey::new_unique(),
+        freeze_authority: None,
+    }
+    .pack();
+    *mint_ix.last_mut().unwrap() = 2;
+    assert!(ReceiveTokenInstruction::unpack(&mint_ix).is_err());
+
+    assert!(ReceiveTokenInstruction::unpack(&[]).is_err());
+    assert!(ReceiveTokenInstruction::unpack(&[99]).is_err());
+}

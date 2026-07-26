@@ -267,3 +267,47 @@ fn transfer_reports_credited_vs_held_in_return_data() {
         "at or above min_amount -> credited"
     );
 }
+
+#[test]
+fn zero_amount_transfer_cannot_burn_a_shard_slot() {
+    // A zero-amount hold moves nothing but consumes one of MAX_OPEN_RECEIPTS, so without
+    // this an attacker holding no tokens at all could fill a victim's shard.
+    let mut fx = Fixture::boot(1_000).with_policy_dest(100);
+    let (guard_token, _) =
+        derive_guard_token_address(&fx.dest_owner.pubkey(), &fx.mint.pubkey(), &fx.program_id);
+    let (guard_state, _) =
+        derive_guard_state_address(&fx.dest_owner.pubkey(), &fx.mint.pubkey(), &fx.program_id);
+    let nonce = [61u8; 32];
+    let (receipt, _) = derive_receipt_address(
+        &fx.dest_owner.pubkey(),
+        &fx.mint.pubkey(),
+        &fx.source_owner.pubkey(),
+        &nonce,
+        &fx.program_id,
+    );
+
+    send(
+        &mut fx.svm,
+        &fx.payer,
+        &[&fx.source_owner],
+        vec![transfer_checked(
+            &fx.program_id,
+            &fx.source.pubkey(),
+            &fx.mint.pubkey(),
+            &fx.dest.pubkey(),
+            &fx.source_owner.pubkey(),
+            0,
+            6,
+            nonce,
+            Some(PolicyTransferAccounts {
+                guard_token,
+                guard_state,
+                receipt,
+                bond_payer: fx.payer.pubkey(),
+            }),
+        )],
+    )
+    .expect_err("zero-amount hold must be rejected");
+
+    assert!(fx.svm.get_account(&receipt).is_none_or(|a| a.lamports == 0));
+}

@@ -13,7 +13,7 @@ Define destination-account receive-policy semantics with three transfer outcomes
 1. **Ordinary ATA transfers bypass app vaults.** A cooperative `deposit()` only governs funds sent through it.
 2. **Balances are per token account / mint.** Policy attaches to one destination account for one mint — not a chain-wide wallet bag.
 3. **Explicit account lists.** Policy/guard/receipt accounts must be listed when the extension is present. Missing metas → `failed`, never silent bypass.
-4. **No global writable guard.** Held custody shards by `(receiver_owner, mint, token_program)`.
+4. **No global writable guard.** Held custody shards by `(receiver_owner, mint)`; program scoping comes from the PDA's program id, not a seed.
 5. **Membership = source token-account owner.** Delegates may authorize transfers; allowlist checks still use the source owner. Permanent delegate is issuer power (documented), not an allowlisted “sender.”
 
 ## 3. Approach
@@ -62,6 +62,8 @@ init rather than decoded permissively at transfer time.
 | Expiry settlement | Return full amount to **source_owner** same-mint token account; refund bond |
 | Mint allow-flag | **Not required** in this reference default |
 | Transfer Hook coexistence | Unsupported / fail in v0 (enforced: any other account extension → `failed`) |
+| Zero-amount held transfer | `failed` (would burn a shard slot while moving nothing) |
+| `Approve` / `Revoke` | Not implemented in v0; `delegate` is always unset |
 
 `receipt_bond_lamports` and `receipt_ttl_slots` are chosen by the **receiver** but paid for by
 the **sender** - the bond is debited from `bond_payer` and the TTL decides how long a rejected

@@ -1,4 +1,7 @@
-//! Receiver-scoped guard shard: `(receiver, mint, token_program)`.
+//! Receiver-scoped guard shard, keyed `(receiver, mint)`.
+//!
+//! Token-program scoping comes from the PDA's program id, not from a seed: these addresses
+//! only exist under this program.
 
 use crate::constants::{GUARD_SEED, GUARD_STATE_SEED, MAX_OPEN_RECEIPTS};
 use crate::error::ReceiveTokenError;

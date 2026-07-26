@@ -64,7 +64,7 @@ pub fn process_transfer_checked(
         }
     }
 
-    let (source_owner, source_mint) = {
+    let (source_owner, source_mint, via_delegate) = {
         let source_data = source_info.try_borrow_data()?;
         let source = unpack_account(&source_data)?;
         if source.is_frozen() {
@@ -73,19 +73,29 @@ pub fn process_transfer_checked(
         if source.amount < amount {
             return Err(ReceiveTokenError::InsufficientFunds.into());
         }
-        let authorized = match (&source.delegate, source.owner == *authority_info.key) {
-            (_, true) => true,
-            (COption::Some(delegate), false)
-                if *delegate == *authority_info.key && source.delegated_amount >= amount =>
-            {
+        // Dispatch on the delegate arm first, matching SPL. The previous ordering preferred
+        // the owner arm, then move_amount still decremented delegated_amount whenever the
+        // authority happened to be the recorded delegate, underflowing an otherwise valid
+        // owner-authorized transfer when an owner had delegated to itself.
+        //
+        // Approve / Revoke are not implemented in v0, so `delegate` is always None today and
+        // this branch is unreachable. It is kept correct so the semantics are pinned for
+        // whoever adds them.
+        let via_delegate = match &source.delegate {
+            COption::Some(delegate) if *delegate == *authority_info.key => {
+                if source.delegated_amount < amount {
+                    return Err(ReceiveTokenError::InsufficientFunds.into());
+                }
                 true
             }
-            _ => false,
+            _ => {
+                if source.owner != *authority_info.key {
+                    return Err(ReceiveTokenError::OwnerMismatch.into());
+                }
+                false
+            }
         };
-        if !authorized {
-            return Err(ReceiveTokenError::OwnerMismatch.into());
-        }
-        (source.owner, source.mint)
+        (source.owner, source.mint, via_delegate)
     };
 
     if source_mint != *mint_info.key {
@@ -117,7 +127,7 @@ pub fn process_transfer_checked(
     }
 
     if !dest_has_policy {
-        move_amount(source_info, destination_info, amount, authority_info)?;
+        move_amount(source_info, destination_info, amount, via_delegate)?;
         return credited();
     }
 
@@ -152,9 +162,15 @@ pub fn process_transfer_checked(
     let policy = policy.ok_or(ReceiveTokenError::PolicyNotEnabled)?;
 
     if policy.accepts(amount, &source_owner)? {
-        move_amount(source_info, destination_info, amount, authority_info)?;
+        move_amount(source_info, destination_info, amount, via_delegate)?;
         credited()
     } else {
+        // A zero-amount hold would burn one of MAX_OPEN_RECEIPTS slots while moving nothing,
+        // letting someone with no tokens at all fill a victim's shard.
+        if amount == 0 {
+            return Err(ReceiveTokenError::InsufficientFunds.into());
+        }
+
         {
             let mut gs_data = guard_state.try_borrow_mut_data()?;
             if gs_data.len() < GUARD_STATE_SIZE {
@@ -242,7 +258,7 @@ pub fn process_transfer_checked(
             rdata[..RECEIPT_SIZE].copy_from_slice(bytes_of(&receipt));
         }
 
-        move_amount(source_info, guard_token, amount, authority_info)?;
+        move_amount(source_info, guard_token, amount, via_delegate)?;
         held()
     }
 }
@@ -274,7 +290,7 @@ fn move_amount(
     source_info: &AccountInfo,
     dest_info: &AccountInfo,
     amount: u64,
-    authority_info: &AccountInfo,
+    via_delegate: bool,
 ) -> ProgramResult {
     // Aliased source/destination would debit and credit the same buffer in two separate
     // borrows and cancel to a silent no-op, which callers read as "the tokens moved".
@@ -288,15 +304,13 @@ fn move_amount(
             .amount
             .checked_sub(amount)
             .ok_or(ReceiveTokenError::Overflow)?;
-        if let COption::Some(delegate) = source.delegate {
-            if delegate == *authority_info.key {
-                source.delegated_amount = source
-                    .delegated_amount
-                    .checked_sub(amount)
-                    .ok_or(ReceiveTokenError::Overflow)?;
-                if source.delegated_amount == 0 {
-                    source.delegate = COption::None;
-                }
+        if via_delegate {
+            source.delegated_amount = source
+                .delegated_amount
+                .checked_sub(amount)
+                .ok_or(ReceiveTokenError::Overflow)?;
+            if source.delegated_amount == 0 {
+                source.delegate = COption::None;
             }
         }
         pack_account(&source, &mut source_data)?;

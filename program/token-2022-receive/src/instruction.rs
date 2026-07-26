@@ -39,7 +39,6 @@ pub enum ReceiveTokenInstruction {
 
     /// Ensure guard token account + guard state PDA exist for (receiver, mint).
     /// Accounts: payer (signer, w), receiver, mint, guard_token (w), guard_state (w),
-    ///           system_program, token_program(=self)
     EnsureGuard = 3,
 
     /// TransferChecked with optional held delivery.
@@ -50,7 +49,9 @@ pub enum ReceiveTokenInstruction {
     /// Policy destination (held path may need extras — always require when policy present):
     ///   source (w), mint, destination (w), authority (signer),
     ///   guard_token (w), guard_state (w), receipt (w), bond_payer (signer, w),
-    ///   system_program, clock
+    ///   system_program
+    ///
+    /// Clock and Rent are read via syscall, not passed as accounts.
     ///
     /// `unique_nonce` is client-supplied 32 bytes for receipt PDA uniqueness.
     TransferChecked {
@@ -66,7 +67,7 @@ pub enum ReceiveTokenInstruction {
 
     /// Permissionless close after TTL: return tokens to source_owner ATA, refund bond.
     /// Accounts: receipt (w), guard_token (w), guard_state (w), source_owner_ata (w),
-    ///           mint, bond_dest (w), clock
+    ///           mint, bond_dest (w)
     CloseExpiredReceipt = 6,
 
     /// MintTo (minimal).
@@ -75,10 +76,28 @@ pub enum ReceiveTokenInstruction {
 }
 
 impl ReceiveTokenInstruction {
+    /// Decode instruction data.
+    ///
+    /// Every arm must consume its input exactly. Tolerating trailing bytes means there is no
+    /// canonical wire form, so a misrouted or mis-encoded instruction gets silently
+    /// reinterpreted as a valid one instead of rejected.
     pub fn unpack(input: &[u8]) -> Result<Self, ProgramError> {
         let (&tag, rest) = input
             .split_first()
             .ok_or(ReceiveTokenError::InvalidInstruction)?;
+        let mut trailing = rest;
+        let parsed = Self::unpack_body(tag, rest, &mut trailing)?;
+        if !trailing.is_empty() {
+            return Err(ReceiveTokenError::InvalidInstruction.into());
+        }
+        Ok(parsed)
+    }
+
+    fn unpack_body<'a>(
+        tag: u8,
+        rest: &'a [u8],
+        trailing: &mut &'a [u8],
+    ) -> Result<Self, ProgramError> {
         Ok(match tag {
             0 => {
                 let (&decimals, rest) = rest
@@ -88,11 +107,17 @@ impl ReceiveTokenInstruction {
                 let (&fa_tag, rest) = rest
                     .split_first()
                     .ok_or(ReceiveTokenError::InvalidInstruction)?;
-                let freeze_authority = if fa_tag == 0 {
-                    None
-                } else {
-                    let (pk, _) = unpack_pubkey(rest)?;
-                    Some(pk)
+                let freeze_authority = match fa_tag {
+                    0 => {
+                        *trailing = rest;
+                        None
+                    }
+                    1 => {
+                        let (pk, next) = unpack_pubkey(rest)?;
+                        *trailing = next;
+                        Some(pk)
+                    }
+                    _ => return Err(ReceiveTokenError::InvalidInstruction.into()),
                 };
                 Self::InitializeMint2 {
                     decimals,
@@ -101,7 +126,8 @@ impl ReceiveTokenInstruction {
                 }
             }
             1 => {
-                let (owner, _) = unpack_pubkey(rest)?;
+                let (owner, next) = unpack_pubkey(rest)?;
+                *trailing = next;
                 Self::InitializeAccount3 { owner }
             }
             2 => {
@@ -128,6 +154,7 @@ impl ReceiveTokenInstruction {
                     allowlist.push(pk);
                     cursor = next;
                 }
+                *trailing = cursor;
                 Self::InitializeReceivePolicy {
                     min_amount,
                     source_owner_mode,
@@ -138,7 +165,10 @@ impl ReceiveTokenInstruction {
                     allowlist,
                 }
             }
-            3 => Self::EnsureGuard,
+            3 => {
+                *trailing = rest;
+                Self::EnsureGuard
+            }
             4 => {
                 let (amount, rest) = unpack_u64(rest)?;
                 let (&decimals, rest) = rest
@@ -149,16 +179,24 @@ impl ReceiveTokenInstruction {
                 }
                 let mut unique_nonce = [0u8; 32];
                 unique_nonce.copy_from_slice(&rest[..32]);
+                *trailing = &rest[32..];
                 Self::TransferChecked {
                     amount,
                     decimals,
                     unique_nonce,
                 }
             }
-            5 => Self::ClaimReceipt,
-            6 => Self::CloseExpiredReceipt,
+            5 => {
+                *trailing = rest;
+                Self::ClaimReceipt
+            }
+            6 => {
+                *trailing = rest;
+                Self::CloseExpiredReceipt
+            }
             7 => {
-                let (amount, _) = unpack_u64(rest)?;
+                let (amount, next) = unpack_u64(rest)?;
+                *trailing = next;
                 Self::MintTo { amount }
             }
             _ => return Err(ReceiveTokenError::InvalidInstruction.into()),
