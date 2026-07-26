@@ -51,27 +51,32 @@ Host stubs are not CU-faithful. Prefer LiteSVM for compute numbers.
 
 Canonical `TokenzQd…` cannot host ReceivePolicy. “Before” is the no-policy path on this custom program ID.
 
-## LiteSVM results (measured)
+## LiteSVM results
 
 Same dust (`1`), same mint/source:
 
-| Case | Outcome | Dest | Guard | CU (range) | Ceiling |
-| --- | --- | --- | --- | --- | --- |
-| BEFORE - no policy | credited | `1` | n/a | **2909** | 10_000 |
-| AFTER - policy, dust | held | `0` | `1` | **12.7k - 21.7k** | 50_000 |
-| AFTER - policy accepts `150` | credited | `150` | `0` | **7.2k - 16.2k** | 40_000 |
-| AFTER - metas missing | failed `Custom(10)` | `0` | - | **2300** | 10_000 |
-| Claim held dust | claim to dest | claim `1` | `0` | **8.2k - 21.7k** | 40_000 |
-| Close expired | refund source ATA | - | `0` | **9.6k - 14.1k** | 40_000 |
+| Case | Outcome | Dest | Guard | Ceiling |
+| --- | --- | --- | --- | --- |
+| BEFORE - no policy | credited | `1` | n/a | 10_000 |
+| AFTER - policy, dust | held | `0` | `1` | 50_000 |
+| AFTER - policy accepts `150` | credited | `150` | `0` | 40_000 |
+| AFTER - metas missing | failed `Custom(10)` | `0` | - | 10_000 |
+| Claim held dust | claim to dest | claim `1` | `0` | 40_000 |
+| Close expired | refund source ATA | - | `0` | 40_000 |
 
-Ranges are the min and max over eight runs of the same binary, not across rebuilds. Every path that
-derives a PDA varies by several thousand CU run to run because `find_program_address` searches
-downward from bump 255 and the number of iterations depends on the keys involved, which the
-fixtures generate randomly. The two paths that derive no PDA (`no-policy`, `missing-metas`) are
-byte-stable, which is what identifies the variance as bump search rather than measurement noise.
+**Only the ceilings are a claim.** They are gated by `cu_ceilings` in CI and held across every
+observed run.
 
-Do not read a single sample as a regression or an improvement: only a shift in the whole range is
-meaningful. `cu_ceilings` gates the ceilings, which hold across all observed runs.
+Specific CU samples are deliberately not published here, because they do not reproduce. Every path
+that derives a PDA varies by several thousand CU run to run: `find_program_address` searches
+downward from bump 255, and the iteration count depends on the keys involved, which the fixtures
+generate randomly. An independent eight-run reproduction on the pinned toolchain produced values
+outside every previously recorded bracket, in both directions, so a recorded sample is evidence of
+nothing. Even the two paths that derive no PDA (`no-policy`, `missing-metas`) drift by a few CU
+across builds, so treat them as stable in shape rather than byte-stable.
+
+Re-measure locally with the command below rather than citing a number from this page. Do not read a
+single sample as a regression or an improvement: only a shift in the whole range is meaningful.
 
 Tests: `litesvm_before_after::*`, `litesvm_lifecycle::*`, `cu_ceilings::*`.
 
