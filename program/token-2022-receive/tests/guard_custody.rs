@@ -16,8 +16,11 @@ mod litesvm_helpers;
 use litesvm_helpers::{send, token_amount, Fixture};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signer;
+use token_2022_receive::error::ReceiveTokenError;
 use token_2022_receive::extension::tlv::unpack_account;
-use token_2022_receive::guard::{derive_guard_state_address, derive_guard_token_address};
+use token_2022_receive::guard::{
+    derive_guard_state_address, derive_guard_token_address, GuardState, GUARD_STATE_SIZE,
+};
 use token_2022_receive::instruction::HeldLimits;
 use token_2022_receive::instruction::{claim_receipt, transfer_checked, PolicyTransferAccounts};
 use token_2022_receive::receipt::derive_receipt_address;
@@ -26,6 +29,16 @@ struct Held {
     guard_token: Pubkey,
     guard_state: Pubkey,
     receipt: Pubkey,
+}
+
+fn err_code(e: &litesvm::types::FailedTransactionMetadata) -> Option<u32> {
+    match e.err {
+        solana_sdk::transaction::TransactionError::InstructionError(
+            _,
+            solana_sdk::instruction::InstructionError::Custom(c),
+        ) => Some(c),
+        _ => None,
+    }
 }
 
 /// dest carries ReceivePolicy { min_amount: 100 }, so a 99-token transfer is rejected -> held.
@@ -441,8 +454,6 @@ fn zero_amount_transfer_cannot_burn_a_shard_slot() {
 fn guard_state_accounts_for_every_held_token() {
     // held_amount is what makes `guard.amount >= sum(open receipts)` assertable rather than
     // merely true by construction. Track it across a hold and a claim.
-    use token_2022_receive::guard::GuardState;
-
     let mut fx = Fixture::boot(1_000).with_policy_dest(100);
     let read_state = |fx: &Fixture, key: &Pubkey| -> GuardState {
         let acct = fx.svm.get_account(key).expect("guard state");
@@ -485,6 +496,50 @@ fn guard_state_accounts_for_every_held_token() {
     assert_eq!(gs.open_receipts, 1, "one receipt still open");
     assert_eq!(gs.held_amount, 99, "and it is still backed");
     assert_eq!(token_amount(&fx.svm, &a.guard_token), 99);
+}
+
+#[test]
+fn underfunded_guard_fails_closed_on_claim() {
+    // Simulate a bookkeeping/vault divergence that cannot happen through public instructions:
+    // one open receipt for 99 tokens, but the shard claims it owes 100. Settlement must refuse
+    // before closing the receipt or paying from an under-backed vault.
+    let mut fx = Fixture::boot(1_000).with_policy_dest(100);
+    let held = hold_99(&mut fx, [103u8; 32]);
+    let claim_dest = fx.create_token_account(&fx.source_owner.pubkey());
+    fx.svm.expire_blockhash();
+
+    let mut acct = fx.svm.get_account(&held.guard_state).expect("guard state");
+    let mut state = *bytemuck::from_bytes::<GuardState>(&acct.data[..GUARD_STATE_SIZE]);
+    assert_eq!(state.held_amount, 99);
+    state.held_amount = 100;
+    acct.data[..GUARD_STATE_SIZE].copy_from_slice(bytemuck::bytes_of(&state));
+    fx.svm.set_account(held.guard_state, acct).unwrap();
+    fx.svm.expire_blockhash();
+
+    let err = send(
+        &mut fx.svm,
+        &fx.payer,
+        &[&fx.source_owner],
+        vec![claim_receipt(
+            &fx.program_id,
+            &held.receipt,
+            &held.guard_token,
+            &held.guard_state,
+            &claim_dest.pubkey(),
+            &fx.mint.pubkey(),
+            &fx.source_owner.pubkey(),
+            &fx.payer.pubkey(),
+        )],
+    )
+    .expect_err("under-backed guard must not settle");
+    assert_eq!(
+        err_code(&err),
+        Some(ReceiveTokenError::GuardUnderfunded as u32)
+    );
+
+    assert_eq!(token_amount(&fx.svm, &held.guard_token), 99);
+    assert_eq!(token_amount(&fx.svm, &claim_dest.pubkey()), 0);
+    assert!(fx.svm.get_account(&held.receipt).expect("receipt").lamports > 0);
 }
 
 #[test]

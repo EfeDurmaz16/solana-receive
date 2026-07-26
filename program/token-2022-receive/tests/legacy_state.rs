@@ -450,3 +450,48 @@ fn a_transfer_to_a_foreign_extension_account_fails() {
     );
     assert_eq!(token_amount(&fx.svm, &dest), before, "nothing credited");
 }
+
+#[test]
+fn a_transfer_to_a_malformed_policy_tlv_fails_closed() {
+    // A ReceivePolicy TLV with the wrong declared length must be malformed, not "policy absent";
+    // otherwise the transfer would bypass the receiver's policy and credit the destination.
+    let mut fx = Fixture::boot(1_000).with_plain_dest();
+    let dest = fx.dest.pubkey();
+    let before = token_amount(&fx.svm, &dest);
+
+    let mut acct = fx.svm.get_account(&dest).expect("dest");
+    acct.data.resize(account_len_with_receive_policy(), 0);
+    let policy = ReceivePolicy {
+        min_amount: 100,
+        ..ReceivePolicy::default()
+    };
+    write_receive_policy_tlv(&mut acct.data, &policy).unwrap();
+    let tlv_len_at = token_2022_receive::state::ACCOUNT_SIZE + 1 + 2;
+    acct.data[tlv_len_at..tlv_len_at + 2].copy_from_slice(&4u16.to_le_bytes());
+    fx.svm.set_account(dest, acct).unwrap();
+    fx.svm.expire_blockhash();
+
+    let err = send(
+        &mut fx.svm,
+        &fx.payer,
+        &[&fx.source_owner],
+        vec![transfer_checked(
+            &fx.program_id,
+            &fx.source.pubkey(),
+            &fx.mint.pubkey(),
+            &dest,
+            &fx.source_owner.pubkey(),
+            10,
+            6,
+            [155u8; 32],
+            HeldLimits::unlimited(),
+            None,
+        )],
+    )
+    .expect_err("a malformed ReceivePolicy TLV must fail the transfer");
+    assert_eq!(
+        err_code(&err),
+        Some(ReceiveTokenError::InvalidAccountData as u32)
+    );
+    assert_eq!(token_amount(&fx.svm, &dest), before, "nothing credited");
+}

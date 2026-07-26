@@ -318,7 +318,7 @@ fn foreign_extensions_are_rejected_alongside_a_receive_policy() {
 #[test]
 fn error_discriminants_are_stable() {
     // These surface to clients as ProgramError::Custom(n) and are quoted in docs, so they must
-    // not move when a variant is retired. Retired slots 0, 5, 12 and 16 stay empty.
+    // not move when a variant is retired. Retired slots 0, 5, 11, 12 and 16 stay empty.
     use token_2022_receive::error::ReceiveTokenError as E;
     for (variant, code) in [
         (E::InsufficientFunds, 1u32),
@@ -352,6 +352,14 @@ fn error_discriminants_are_stable() {
     ] {
         assert_eq!(variant.clone() as u32, code, "{variant:?} moved");
     }
+    assert_eq!(
+        solana_program::program_error::ProgramError::from(E::SelfTransferForbidden),
+        solana_program::program_error::ProgramError::Custom(24)
+    );
+    assert_eq!(
+        E::SelfTransferForbidden.to_string(),
+        "Source and destination must differ"
+    );
 }
 
 #[test]
