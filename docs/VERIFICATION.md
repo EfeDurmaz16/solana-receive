@@ -4,6 +4,8 @@ How to reproduce host and on-VM evidence for `token-2022-receive`.
 
 **Program ID:** `GyrTVV4hbcuzJuSz86FNq7K2UVAoSJQtcgHTVTz1hPPq`
 
+Operator smoke checklist and declared-ID vs local keypair story: **[OPERATOR.md](./OPERATOR.md)**.
+
 ## Suites
 
 | Suite | Command | Role |
@@ -166,6 +168,9 @@ artifact (`ok: true`, `finishedAt`, per-step signatures). The lifecycle script d
 artifact at start and writes a new one only after all post-conditions pass. Serve over http
 (`python3 -m http.server 8765 --directory demos/receive`); `file://` cannot fetch the module
 artifact.
+
+See [OPERATOR.md](./OPERATOR.md) for the full smoke path and ID story.
+
 ## Gaps (not yet regression-gated)
 
 1. Throughput under a real scheduler. The account-lock structure that decides contention is now

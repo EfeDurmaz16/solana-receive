@@ -69,16 +69,28 @@ idl/                          # Codama IDL (source for client codegen)
 docs/SPEC.md                  # Normative v0 semantics
 docs/WIRE.md                  # Frozen byte/account contract for codegen
 docs/VERIFICATION.md          # How to re-run evidence + measured CU
+docs/OPERATOR.md              # Smoke checklist + declared-ID vs local keypair
 docs/proposals/               # sRFC, decision request, maintainer note, SIMD gate
-scripts/                      # Surfpool lifecycle + codegen helpers
+scripts/                      # smoke.sh, Surfpool lifecycle, codegen helpers
 demos/receive/                # Honest Surfpool demo UI (custom program/mint)
 .upstream-token-2022-sha.txt  # Pinned upstream SHA for layout inspiration
 ```
 
 ## Program ID
 
-Declared ID: `GyrTVV4hbcuzJuSz86FNq7K2UVAoSJQtcgHTVTz1hPPq`.  
-Local `cargo build-sbf` may emit a different `target/deploy/*-keypair.json`; for Surfpool/deploy, use a keypair whose pubkey matches `declare_id!`, or regenerate both together. Never commit keypairs.
+Declared ID: `GyrTVV4hbcuzJuSz86FNq7K2UVAoSJQtcgHTVTz1hPPq`.
+
+Local `cargo build-sbf` usually emits a **different** `target/deploy/*-keypair.json`. The Surfpool
+lifecycle deploys that local keypair and passes `RECEIVE_PROGRAM_ID` into the Kit client. A green
+demo is fidelity evidence under that override; it is **not** proof of declared-ID deployability
+without the matching secret. Full story: [docs/OPERATOR.md](docs/OPERATOR.md). Never commit keypairs.
+
+## Operator smoke
+
+```bash
+./scripts/smoke.sh                    # build-sbf + Rust tests + JS client
+./scripts/surfpool-lifecycle.sh       # manual RPC (Surfpool 1.5.0); see OPERATOR.md
+```
 
 ## Proposal path
 
