@@ -197,14 +197,14 @@ therefore needs a defined semantics for that field before it can be written.
 | `Receiver` | `receiver_owner` |
 | `ThirdParty` | Explicit pubkey in policy |
 
-**Expiry:** after `expires_slot`, anyone may close; tokens return to a **source_owner** same-mint token account; bond **must** refund only to the recorded `bond_payer` (permissionless closer cannot redirect bond lamports).
+**Expiry:** at or after `expires_slot`, anyone may close; tokens return to a **source_owner** same-mint token account; bond **must** refund only to the recorded `bond_payer` (permissionless closer cannot redirect bond lamports).
 
 ```mermaid
 stateDiagram-v2
   [*] --> Open: held transfer creates receipt
   Open --> Claimed: ClaimReceipt\nrecovery authority signs
-  Open --> Expired: current slot > expires_slot
-  Expired --> ClosedExpired: CloseExpiredReceipt\nany signer
+  Open --> ClosedExpired: CloseExpiredReceipt when\nslot >= expires_slot\n(permissionless; no ix signer)
+  note right of Open: After TTL, Claim and Close\nrace until one closes the receipt.\nOn-chain status is Open or Closed only.
   Claimed --> [*]: receipt closed\nbond refunded
   ClosedExpired --> [*]: receipt closed\nbond refunded
 ```
