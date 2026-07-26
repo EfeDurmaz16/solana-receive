@@ -45,7 +45,7 @@ receipt and could never be recovered.
 
 | | |
 | --- | --- |
-| In tree | Reference program, host + LiteSVM suites, golden vectors, Codama/Kit JS client, Surfpool demo |
+| In tree | Reference program, host + LiteSVM suites, golden vectors, Codama/Kit JS client |
 | Measured | CU ceilings + footprints under LiteSVM (see [docs/VERIFICATION.md](docs/VERIFICATION.md)) |
 | Not claimed | Canonical Token-2022, TokenzQd wire compatibility, legacy USDC interception, full upstream extension parity, mainnet product, any upgrade or migration path |
 
@@ -70,8 +70,7 @@ docs/SPEC.md                  # Normative v0 semantics
 docs/WIRE.md                  # Frozen byte/account contract for codegen
 docs/VERIFICATION.md          # How to re-run evidence + measured CU
 docs/proposals/               # sRFC, decision request, maintainer note, SIMD gate
-scripts/                      # Surfpool lifecycle + codegen helpers
-demos/receive/                # Honest Surfpool demo UI (custom program/mint)
+scripts/                      # Optional Surfpool checklist
 .upstream-token-2022-sha.txt  # Pinned upstream SHA for layout inspiration
 ```
 

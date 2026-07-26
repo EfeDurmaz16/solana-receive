@@ -22,7 +22,7 @@ How to reproduce host and on-VM evidence for `token-2022-receive`.
 | Upstream differential | `cargo test -p token-2022-receive --test upstream_differential` | Layout + no-policy overlap (not TokenzQd) |
 | CU ceilings | `cargo build-sbf` then `cargo test -p token-2022-receive --test cu_ceilings -- --nocapture` | Regression alarms + tx footprint |
 | LiteSVM | `cargo build-sbf` then `cargo test -p token-2022-receive --test litesvm_before_after --test litesvm_lifecycle -- --nocapture` | Real SBF + CU |
-| Surfpool | `./scripts/surfpool-lifecycle.sh` | RPC fidelity + Kit demo (Surfpool CLI v1.5.0; optional if CLI absent) |
+| Surfpool | `./scripts/surfpool-before-after.sh` | Optional RPC localnet (CLI may be absent) |
 
 CI runs all of the above on every push and pull request (`.github/workflows/ci.yml`), including
 `cargo fmt --check` and `cargo clippy --lib -- -D warnings`.
@@ -136,36 +136,20 @@ leave documented gaps rather than renumbering live codes.
 
 Single-ix footprints are under the 1232-byte tx limit. Guards are PDA-sharded by `(receiver, mint)`; receipts use `unique_nonce`.
 
-## Surfpool + Kit client (Phase 3)
+## Surfpool (optional)
 
-Pin: **Surfpool CLI v1.5.0**
-([releases](https://github.com/solana-foundation/surfpool/releases/tag/v1.5.0)).
-
-LiteSVM remains the semantic/CU gate. Surfpool is RPC fidelity and the honest demo path.
+Install Surfpool from [releases](https://github.com/solana-foundation/surfpool/releases), then:
 
 ```bash
-# Install the pin onto PATH, then:
-./scripts/surfpool-lifecycle.sh
+surfpool start --offline --skip-blockhash-check
+# deploy target/deploy/token_2022_receive.so with a keypair matching declare_id!
 ```
 
-That script:
-
-1. Builds `token_2022_receive.so`
-2. Starts `surfpool start --offline --skip-blockhash-check --no-deploy --ci`
-3. Deploys with the local `target/deploy/*-keypair.json`
-4. Runs `scripts/surfpool-lifecycle.mjs` through the public Kit client:
-   credited → held → claim → expiry (`surfnet_timeTravel`)
-
-If the local keypair pubkey differs from `declare_id!`
-(`GyrTVV4hbcuzJuSz86FNq7K2UVAoSJQtcgHTVTz1hPPq`), the script sets
-`RECEIVE_PROGRAM_ID` for the client. Matching the declared ID still requires
-that keypair. Never commit keypairs.
-
-Demo UI: `demos/receive/` (loads `last-run.json` after a successful run).
+Use when exercising RPC / Kit demos. For program semantics + CU, LiteSVM is enough.
 
 ## Gaps (not yet regression-gated)
 
 1. Throughput under a real scheduler. The account-lock structure that decides contention is now
    asserted (`cu_ceilings::distinct_shards_share_no_writable_account`), but LiteSVM does not model
    bank locks, so no wall-clock claim is made.
-2. CI-gated Surfpool job (local/manual evidence today; optional when runners carry the CLI pin).
+2. Surfpool + Kit client demo once the CLI is installed.
