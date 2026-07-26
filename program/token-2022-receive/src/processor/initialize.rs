@@ -147,7 +147,7 @@ pub fn process_initialize_receive_policy(
     }
     // A policy is write-once in v0. Rewriting it in place would let a receiver change
     // min_amount, recovery authority, bond and TTL between a sender's quote and the sender's
-    // transaction — turning an accepted payment into a held one the receiver can claim.
+    // transaction - turning an accepted payment into a held one the receiver can claim.
     if has_receive_policy(&data)? {
         return Err(ReceiveTokenError::AlreadyInUse.into());
     }
@@ -251,7 +251,7 @@ pub fn process_ensure_guard(program_id: &Pubkey, accounts: &[AccountInfo]) -> Pr
             &[payer.clone(), guard_token.clone(), system_program.clone()],
             &[seeds],
         )?;
-        // Held custody must NOT be spendable by the receiver — the receiver is exactly the
+        // Held custody must NOT be spendable by the receiver - the receiver is exactly the
         // party the guard protects senders against. The token-level owner is the guard_state
         // PDA, which no external keypair can sign for, so the only debit paths are
         // ClaimReceipt / CloseExpiredReceipt.

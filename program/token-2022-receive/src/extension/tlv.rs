@@ -15,7 +15,7 @@ pub const TLV_HEADER_SIZE: usize = TLV_TYPE_SIZE + TLV_LENGTH_SIZE;
 ///
 /// `PolicyNotEnabled` means the account simply carries no such extension (a plain 165-byte
 /// token account, or a TLV region that terminates without a match). Any other error means the
-/// data is **malformed** and must not be treated as "no policy" — see [`has_receive_policy`].
+/// data is **malformed** and must not be treated as "no policy" - see [`has_receive_policy`].
 pub fn find_extension_offset(
     data: &[u8],
     extension_type: u16,
@@ -66,7 +66,7 @@ pub fn get_receive_policy(data: &[u8]) -> Result<ReceivePolicy, ProgramError> {
 ///
 /// A malformed extension is an error, never a `false`: swallowing it would route the transfer
 /// down the no-policy path and credit the destination, silently bypassing the very policy the
-/// receiver attached. Presence is answered from the TLV header alone — no value copy.
+/// receiver attached. Presence is answered from the TLV header alone - no value copy.
 pub fn has_receive_policy(data: &[u8]) -> Result<bool, ProgramError> {
     match find_extension_offset(data, EXTENSION_TYPE_RECEIVE_POLICY) {
         Ok((_, len)) if len == core::mem::size_of::<ReceivePolicy>() => Ok(true),
@@ -78,7 +78,7 @@ pub fn has_receive_policy(data: &[u8]) -> Result<bool, ProgramError> {
 
 /// SPEC §9: ReceivePolicy does not coexist with other account extensions in v0.
 ///
-/// Without this the claim was documentation only — the TLV walker happily skipped past any
+/// Without this the claim was documentation only - the TLV walker happily skipped past any
 /// other extension, so a Transfer Hook or Confidential Transfer account would have taken the
 /// policy path with semantics this version never defined.
 pub fn assert_no_other_extensions(data: &[u8]) -> Result<(), ProgramError> {

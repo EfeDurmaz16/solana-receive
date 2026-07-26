@@ -27,12 +27,12 @@ flowchart TD
 
 | Outcome | Meaning | Return data |
 | --- | --- | --- |
-| `failed` | Ordinary token / account-resolution failure (atomic; no receipt) | — (tx reverts) |
+| `failed` | Ordinary token / account-resolution failure (atomic; no receipt) | - (tx reverts) |
 | `credited` | Policy accepts → `source → destination` | `0` |
 | `held` | Policy rejects → `source → guard` + receipt; instruction `Ok` | `1` |
 
 `held` **succeeds**. Senders and indexers must read the outcome byte, not just transaction
-success — otherwise a diverted payment reads as a delivered one. Held funds stay recoverable:
+success - otherwise a diverted payment reads as a delivered one. Held funds stay recoverable:
 the guard's spending authority is a PDA, so the receiver cannot spend them, and recovery is
 by `ClaimReceipt` or permissionless `CloseExpiredReceipt` after the TTL.
 

@@ -1,6 +1,6 @@
 //! Regression suite for guard custody: held funds must not be spendable by the receiver.
 //!
-//! Pins the invariant behind the `held` outcome — once tokens sit in the guard, the ONLY
+//! Pins the invariant behind the `held` outcome - once tokens sit in the guard, the ONLY
 //! debit paths are ClaimReceipt and CloseExpiredReceipt. Before this was enforced, the guard
 //! token account's owner field was the receiver, so the receiver could drain every sender's
 //! held balance with a plain 4-account TransferChecked and permanently strand the receipts.

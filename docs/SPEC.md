@@ -64,7 +64,7 @@ init rather than decoded permissively at transfer time.
 | Transfer Hook coexistence | Unsupported / fail in v0 (enforced: any other account extension → `failed`) |
 
 `receipt_bond_lamports` and `receipt_ttl_slots` are chosen by the **receiver** but paid for by
-the **sender** — the bond is debited from `bond_payer` and the TTL decides how long a rejected
+the **sender** - the bond is debited from `bond_payer` and the TTL decides how long a rejected
 transfer stays locked. Both are therefore capped by the protocol, not left to the destination.
 
 ## 5. Outcomes
@@ -81,8 +81,8 @@ Policy accepts → amount credited to destination. No receipt. Instruction succe
 
 Policy rejects an otherwise token-valid transfer → amount routes **source → guard**; receipt created; destination unchanged; instruction `Ok`.
 
-Because `held` succeeds, the instruction reports the outcome as one byte of **return data** —
-`0` credited, `1` held — and logs it. A caller that checks only whether the transaction landed
+Because `held` succeeds, the instruction reports the outcome as one byte of **return data** -
+`0` credited, `1` held - and logs it. A caller that checks only whether the transaction landed
 will read a held transfer as a delivered payment; integrators MUST read the outcome.
 
 ```mermaid
@@ -101,7 +101,7 @@ flowchart TD
 - At capacity (`MAX_OPEN_RECEIPTS`), further policy-reject transfers **`failed`**.
 
 **Custody authority (load-bearing).** The guard token account's owner field is the
-`guard_state` PDA — *not* the receiver. No keypair can sign for it, so the only debit paths
+`guard_state` PDA - *not* the receiver. No keypair can sign for it, so the only debit paths
 are `ClaimReceipt` and `CloseExpiredReceipt`. The receiver is the party whose policy rejected
 the transfer, and is therefore exactly the party held custody must be protected against;
 making the receiver the guard's spending authority would let one signature confiscate every

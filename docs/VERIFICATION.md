@@ -44,12 +44,12 @@ Same dust (`1`), same mint/source:
 
 | Case | Outcome | Dest | Guard | CU | Ceiling |
 | --- | --- | --- | --- | --- | --- |
-| BEFORE — no policy | credited | `1` | n/a | **2253** | 10_000 |
-| AFTER — policy, dust | held | `0` | `1` | **11210** | 50_000 |
-| AFTER — policy accepts `150` | credited | `150` | `0` | **6637** | 40_000 |
-| AFTER — metas missing | failed `Custom(10)` | `0` | — | **1810** | 10_000 |
+| BEFORE - no policy | credited | `1` | n/a | **2253** | 10_000 |
+| AFTER - policy, dust | held | `0` | `1` | **11210** | 50_000 |
+| AFTER - policy accepts `150` | credited | `150` | `0` | **6637** | 40_000 |
+| AFTER - metas missing | failed `Custom(10)` | `0` | - | **1810** | 10_000 |
 | Claim held dust | claim → dest | claim `1` | `0` | **7225** | 40_000 |
-| Close expired | refund source ATA | — | `0` | **8626** | 40_000 |
+| Close expired | refund source ATA | - | `0` | **8626** | 40_000 |
 
 The held path costs less than the earlier `~14–21k` sample: the destination policy is decoded
 once per transfer and presence is answered from the TLV header instead of copying the value.
