@@ -54,6 +54,7 @@ Run from the repo root. Stop on first failure.
 ### 0. Toolchain
 
 ```bash
+sh -c "$(curl -sSfL https://release.anza.xyz/v4.1.1/install)"
 export PATH="$HOME/.local/share/solana/install/active_release/bin:$HOME/.local/bin:$PATH"
 solana --version          # Agave 4.1.x when CU table was measured
 rustc --version
