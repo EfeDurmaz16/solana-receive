@@ -46,19 +46,24 @@ Canonical `TokenzQd…` cannot host ReceivePolicy. “Before” is the no-policy
 
 Same dust (`1`), same mint/source:
 
-| Case | Outcome | Dest | Guard | CU | Ceiling |
+| Case | Outcome | Dest | Guard | CU (range) | Ceiling |
 | --- | --- | --- | --- | --- | --- |
-| BEFORE - no policy | credited | `1` | n/a | **2253** | 10_000 |
-| AFTER - policy, dust | held | `0` | `1` | **11210** | 50_000 |
-| AFTER - policy accepts `150` | credited | `150` | `0` | **6637** | 40_000 |
-| AFTER - metas missing | failed `Custom(10)` | `0` | - | **1810** | 10_000 |
-| Claim held dust | claim → dest | claim `1` | `0` | **7225** | 40_000 |
-| Close expired | refund source ATA | - | `0` | **8626** | 40_000 |
+| BEFORE - no policy | credited | `1` | n/a | **2667** | 10_000 |
+| AFTER - policy, dust | held | `0` | `1` | **12.1k - 18.1k** | 50_000 |
+| AFTER - policy accepts `150` | credited | `150` | `0` | **7.1k - 13.1k** | 40_000 |
+| AFTER - metas missing | failed `Custom(10)` | `0` | - | **2069** | 10_000 |
+| Claim held dust | claim to dest | claim `1` | `0` | **7.7k - 15.2k** | 40_000 |
+| Close expired | refund source ATA | - | `0` | **7.7k - 16.7k** | 40_000 |
 
-The held path costs less than the earlier `~14–21k` sample: the destination policy is decoded
-once per transfer and presence is answered from the TLV header instead of copying the value.
+Ranges are measured over repeated runs of the same binary, not across rebuilds. Every path that
+derives a PDA varies by several thousand CU run to run because `find_program_address` searches
+downward from bump 255 and the number of iterations depends on the keys involved, which the
+fixtures generate randomly. The two paths that derive no PDA (`no-policy`, `missing-metas`) are
+byte-stable, which is what identifies the variance as bump search rather than measurement noise.
 
-CU drifts slightly across rebuilds; `cu_ceilings` enforces the ceilings above.  
+Do not read a single sample as a regression or an improvement: only a shift in the whole range is
+meaningful. `cu_ceilings` gates the ceilings, which hold across all observed runs.
+
 Tests: `litesvm_before_after::*`, `litesvm_lifecycle::*`, `cu_ceilings::*`.
 
 ## Toolchain pin (reproducibility)

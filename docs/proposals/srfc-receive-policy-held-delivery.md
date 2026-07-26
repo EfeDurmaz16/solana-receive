@@ -77,16 +77,16 @@ See SPEC §9. Confidential Transfer incompatible in v0. Legacy Tokenkeg out of s
 
 ## 8. Compute / size (measured on reference program)
 
-LiteSVM samples **drift across rebuilds**. Prefer ranges + regression ceilings in [`../VERIFICATION.md`](../VERIFICATION.md). Point samples below are illustrative only — not performance guarantees.
+Every path that derives a PDA varies by several thousand CU run to run, because `find_program_address` iterates from bump 255 and the count depends on the keys involved. Ranges below are measured over repeated runs; a single sample is not a performance guarantee, and only a shift in the whole range indicates a real change. See [`../VERIFICATION.md`](../VERIFICATION.md).
 
-| Path | Accounts | CU (LiteSVM, approx.) | Ceiling |
+| Path | Accounts | CU (LiteSVM, range) | Ceiling |
 | --- | --- | --- | --- |
-| No-policy transfer | 4 | ~2.0k | 10_000 |
-| Policy credited | 9 | ~6–15k | 40_000 |
-| Policy held | 9 | ~14–21k | 50_000 |
-| Missing metas | 4 (incomplete) | ~1.8k | 10_000 |
-| Claim held dust | 7 | ~10–12k | 40_000 |
-| Close expired | 6 | ~5.6–8.6k | 40_000 |
+| No-policy transfer | 4 | 2.7k | 10_000 |
+| Policy credited | 9 | 7.1k - 13.1k | 40_000 |
+| Policy held | 9 | 12.1k - 18.1k | 50_000 |
+| Missing metas | 4 (incomplete) | 2.1k | 10_000 |
+| Claim held dust | 7 | 7.7k - 15.2k | 40_000 |
+| Close expired | 6 | 7.7k - 16.7k | 40_000 |
 
 Serialized policy-transfer tx ≈ **540B** (&lt; 1232). Contention: distinct receivers do not share a writable guard; same `(receiver, mint)` serializes. Mollusk not integrated on this toolchain.
 
