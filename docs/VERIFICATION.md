@@ -9,6 +9,8 @@ How to reproduce host and on-VM evidence for `token-2022-receive`.
 | Suite | Command | Role |
 | --- | --- | --- |
 | Smoke | `cargo test -p token-2022-receive --test smoke` | Policy/TLV/PDA unit checks |
+| Guard custody | `cargo build-sbf` then `cargo test -p token-2022-receive --test guard_custody` | Held funds unspendable by the receiver; outcome return data |
+| Policy bounds | `cargo build-sbf` then `cargo test -p token-2022-receive --test policy_bounds` | Write-once policy; mode validation; bond/TTL caps |
 | Host verify | `cargo test -p token-2022-receive --test verify_no_policy --test verify_policy_transfer --test verify_receipt_lifecycle` | Stateful AccountInfo + syscall stubs |
 | Golden vectors | `cargo test -p token-2022-receive --test golden_vectors` | sRFC §9 IDs `V-NP`…`V-AU` + nonce contract |
 | Upstream differential | `cargo test -p token-2022-receive --test upstream_differential` | Layout + no-policy overlap (not TokenzQd) |
@@ -42,12 +44,15 @@ Same dust (`1`), same mint/source:
 
 | Case | Outcome | Dest | Guard | CU | Ceiling |
 | --- | --- | --- | --- | --- | --- |
-| BEFORE — no policy | credited | `1` | n/a | **2035** | 10_000 |
-| AFTER — policy, dust | held | `0` | `1` | **~14–21k** | 50_000 |
-| AFTER — policy accepts `150` | credited | `150` | `0` | **~6–15k** | 40_000 |
-| AFTER — metas missing | failed `Custom(10)` | `0` | — | **1788** | 10_000 |
-| Claim held dust | claim → dest | claim `1` | `0` | **~10–12k** | 40_000 |
-| Close expired | refund source ATA | — | `0` | **~5.6–8.6k** | 40_000 |
+| BEFORE — no policy | credited | `1` | n/a | **2253** | 10_000 |
+| AFTER — policy, dust | held | `0` | `1` | **11210** | 50_000 |
+| AFTER — policy accepts `150` | credited | `150` | `0` | **6637** | 40_000 |
+| AFTER — metas missing | failed `Custom(10)` | `0` | — | **1810** | 10_000 |
+| Claim held dust | claim → dest | claim `1` | `0` | **7225** | 40_000 |
+| Close expired | refund source ATA | — | `0` | **8626** | 40_000 |
+
+The held path costs less than the earlier `~14–21k` sample: the destination policy is decoded
+once per transfer and presence is answered from the TLV header instead of copying the value.
 
 CU drifts slightly across rebuilds; `cu_ceilings` enforces the ceilings above.  
 Tests: `litesvm_before_after::*`, `litesvm_lifecycle::*`, `cu_ceilings::*`.
@@ -76,6 +81,12 @@ Distinct `(receiver, mint)` shards use distinct writable guard PDAs (no shared g
 | Claim + expiry close + pre-TTL reject | Covered by host suites |
 | Claim wrong bond dest / wrong guard PDA | Covered by host suites |
 | Instruction account counts (4 / 9 / 7 / 6) | Covered by host suites |
+| Guard custody not spendable by receiver | `guard_custody` (LiteSVM, real SBF) |
+| Policy write-once / mode validation / bond + TTL caps | `policy_bounds` (LiteSVM, real SBF) |
+| Malformed / short TLV fails closed | `smoke` |
+
+Error codes are explicit and stable (`ReceiveTokenError` discriminants); retired variants
+leave documented gaps rather than renumbering live codes.
 
 ## Transaction footprint
 
@@ -104,3 +115,6 @@ Use when exercising RPC / Kit demos. For program semantics + CU, LiteSVM is enou
 1. Guard capacity / open-receipt ceiling under LiteSVM.
 2. Scheduler-faithful multi-tx contention measurement (account-lock analysis only for now).
 3. Surfpool + Kit client demo once CLI is installed.
+4. Shard-fill griefing cost (filling `MAX_OPEN_RECEIPTS` denies further held delivery until
+   receipts expire; see SPEC §10 residual risks).
+5. JS client has no test suite and is not exercised in CI; there is no CI workflow in-tree.

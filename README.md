@@ -25,11 +25,16 @@ flowchart TD
   C -->|No| H[held → guard + receipt; Ok]
 ```
 
-| Outcome | Meaning |
-| --- | --- |
-| `failed` | Ordinary token / account-resolution failure (atomic; no receipt) |
-| `credited` | Policy accepts → `source → destination` |
-| `held` | Policy rejects → `source → guard` + receipt; instruction `Ok` |
+| Outcome | Meaning | Return data |
+| --- | --- | --- |
+| `failed` | Ordinary token / account-resolution failure (atomic; no receipt) | — (tx reverts) |
+| `credited` | Policy accepts → `source → destination` | `0` |
+| `held` | Policy rejects → `source → guard` + receipt; instruction `Ok` | `1` |
+
+`held` **succeeds**. Senders and indexers must read the outcome byte, not just transaction
+success — otherwise a diverted payment reads as a delivered one. Held funds stay recoverable:
+the guard's spending authority is a PDA, so the receiver cannot spend them, and recovery is
+by `ClaimReceipt` or permissionless `CloseExpiredReceipt` after the TTL.
 
 ## Status / non-claims
 
@@ -43,10 +48,12 @@ flowchart TD
 
 ```bash
 export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
-cargo test -p token-2022-receive
 cargo build-sbf --manifest-path program/token-2022-receive/Cargo.toml
-cargo test -p token-2022-receive --test litesvm_before_after --test litesvm_lifecycle --test cu_ceilings -- --nocapture
+cargo test -p token-2022-receive
 ```
+
+Security-relevant regression suites: `guard_custody` (held funds unspendable by the receiver,
+outcome reporting) and `policy_bounds` (write-once policy, mode validation, bond/TTL caps).
 
 ## Layout
 

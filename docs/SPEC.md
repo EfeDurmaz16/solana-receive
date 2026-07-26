@@ -45,16 +45,27 @@ amount >= min_amount
 AND (AllowAll OR source_owner ∈ allowlist)
 ```
 
+The policy is **write-once**. `InitializeReceivePolicy` fails on an account that already
+carries the extension, so a destination cannot rewrite acceptance rules between a sender's
+quote and the sender's transaction. Mode bytes outside the defined ranges are rejected at
+init rather than decoded permissively at transfer time.
+
 **v0 reference defaults (locked in code):**
 
 | Parameter | Value |
 | --- | --- |
 | `MAX_OPEN_RECEIPTS` | 64 per `(receiver, mint)` shard |
+| `MAX_RECEIPT_BOND_LAMPORTS` | 1 SOL (`1_000_000_000`) |
+| `MAX_RECEIPT_TTL_SLOTS` | `6_480_000` ≈ 30 days |
 | Receipt PDA | `(receiver, mint, source_owner, unique_nonce)` |
 | Bond payer | Explicit instruction account (typically fee payer) |
 | Expiry settlement | Return full amount to **source_owner** same-mint token account; refund bond |
 | Mint allow-flag | **Not required** in this reference default |
-| Transfer Hook coexistence | Unsupported / fail in v0 |
+| Transfer Hook coexistence | Unsupported / fail in v0 (enforced: any other account extension → `failed`) |
+
+`receipt_bond_lamports` and `receipt_ttl_slots` are chosen by the **receiver** but paid for by
+the **sender** — the bond is debited from `bond_payer` and the TTL decides how long a rejected
+transfer stays locked. Both are therefore capped by the protocol, not left to the destination.
 
 ## 5. Outcomes
 
@@ -70,6 +81,10 @@ Policy accepts → amount credited to destination. No receipt. Instruction succe
 
 Policy rejects an otherwise token-valid transfer → amount routes **source → guard**; receipt created; destination unchanged; instruction `Ok`.
 
+Because `held` succeeds, the instruction reports the outcome as one byte of **return data** —
+`0` credited, `1` held — and logs it. A caller that checks only whether the transaction landed
+will read a held transfer as a delivered payment; integrators MUST read the outcome.
+
 ```mermaid
 flowchart TD
   A[Policy-enabled transfer] --> B{Token-valid?}
@@ -84,6 +99,14 @@ flowchart TD
 - Guard token + guard-state PDAs per `(receiver_owner, mint)`.
 - On `held`, move tokens source → guard in transfer processing (no app Deposit/Escrow hop).
 - At capacity (`MAX_OPEN_RECEIPTS`), further policy-reject transfers **`failed`**.
+
+**Custody authority (load-bearing).** The guard token account's owner field is the
+`guard_state` PDA — *not* the receiver. No keypair can sign for it, so the only debit paths
+are `ClaimReceipt` and `CloseExpiredReceipt`. The receiver is the party whose policy rejected
+the transfer, and is therefore exactly the party held custody must be protected against;
+making the receiver the guard's spending authority would let one signature confiscate every
+sender's held balance in the shard. Transfer processing additionally rejects the guard as
+either endpoint of a `TransferChecked`.
 
 ## 7. Receipt lifecycle
 
@@ -127,15 +150,34 @@ When destination has ReceivePolicy, `TransferChecked` requires **9** accounts:
 
 ## 10. Threat model (summary)
 
+The adversary this design must survive is the **receiver**: held custody exists precisely
+because the receiver rejected the transfer, so every guard-side control assumes the
+destination owner is hostile.
+
 | Threat | Mitigation |
 | --- | --- |
+| **Receiver spends held custody directly** | Guard token authority is the `guard_state` PDA (unsignable); guard rejected as a transfer endpoint |
+| **Policy rewritten mid-flight to seize an in-flight payment** | Policy is write-once |
+| **Receiver-set bond / TTL used to grief the sender** | Capped by `MAX_RECEIPT_BOND_LAMPORTS` / `MAX_RECEIPT_TTL_SLOTS` |
+| **Malformed policy TLV read as "no policy"** | Parse errors fail closed; only genuine absence credits |
+| **Unknown mode byte degrading a policy to AllowAll** | Mode bytes parsed at init; unknown values rejected |
+| **Held mistaken for credited by integrators** | Outcome byte in return data (`0` credited, `1` held) + log |
+| Undeclared extension coexistence | Any non-ReceivePolicy account extension → `failed` |
 | Missing metas → silent bypass | Fail-closed |
 | Global guard hotspot | Per-receiver shards |
 | Receipt rent griefing | Bond + capacity + TTL |
 | Permissionless close steals bond | `bond_dest` must equal recorded `bond_payer` |
-| Wrong guard accounts on claim/expiry | PDA + guard-state field checks |
+| Wrong guard accounts on claim/expiry | PDA + guard-state field checks (both transfer and claim paths) |
 | Delegate / permanent-delegate confusion | Membership = source owner |
 | USDC interception claims | Explicit non-claim |
+
+### Residual risks (not mitigated in v0)
+
+| Risk | Status |
+| --- | --- |
+| A hostile destination can still *route* an ordinary transfer into held custody by setting an unsatisfiable policy. Recovery is guaranteed (claim or expiry, both bounded), but the sender's funds are delayed, and under `Receiver` / `ThirdParty` recovery the destination decides who claims. **Senders must read the outcome byte, not just transaction success.** | By design; bounded by the TTL cap |
+| Shard capacity is a shared permissionless resource: filling `MAX_OPEN_RECEIPTS` on a `(receiver, mint)` shard costs only refundable bond and denies further *held* delivery until receipts expire. Credited transfers are unaffected and the failure is closed. | Accepted for v0 |
+| Guard-token dust sent directly to the guard PDA is unattributed and unrecoverable. | Accepted for v0 |
 
 ## 11. Proposal path
 
