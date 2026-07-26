@@ -8,8 +8,6 @@
 //! (see `.upstream-token-2022-sha.txt`). v0 deliberately omits confidential transfer,
 //! transfer fees, and Transfer Hook coexistence.
 
-#![allow(clippy::arithmetic_side_effects)]
-
 pub mod constants;
 pub mod error;
 pub mod extension;

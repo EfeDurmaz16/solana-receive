@@ -18,6 +18,7 @@ use litesvm_helpers::{send, Fixture};
 use solana_sdk::{message::Message, signature::Signer, transaction::Transaction};
 use token_2022_receive::constants::DEFAULT_RECEIPT_TTL_SLOTS;
 use token_2022_receive::guard::{derive_guard_state_address, derive_guard_token_address};
+use token_2022_receive::instruction::HeldLimits;
 use token_2022_receive::instruction::{
     claim_receipt, close_expired_receipt, transfer_checked, PolicyTransferAccounts,
 };
@@ -88,6 +89,7 @@ fn cu_ceiling_no_policy_transfer() {
             1,
             6,
             [0u8; 32],
+            HeldLimits::unlimited(),
             None,
         )],
     )
@@ -113,6 +115,7 @@ fn cu_ceiling_policy_credited_and_held_and_missing() {
             150,
             6,
             nonce_c,
+            HeldLimits::unlimited(),
             Some(metas_c),
         )],
     )
@@ -135,6 +138,7 @@ fn cu_ceiling_policy_credited_and_held_and_missing() {
             1,
             6,
             nonce_h,
+            HeldLimits::unlimited(),
             Some(metas_h),
         )],
     )
@@ -155,6 +159,7 @@ fn cu_ceiling_policy_credited_and_held_and_missing() {
             1,
             6,
             [3u8; 32],
+            HeldLimits::unlimited(),
             None,
         )],
     )
@@ -183,6 +188,7 @@ fn cu_ceiling_claim_and_expiry() {
             1,
             6,
             nonce,
+            HeldLimits::unlimited(),
             Some(metas),
         )],
     )
@@ -226,6 +232,7 @@ fn cu_ceiling_claim_and_expiry() {
             1,
             6,
             nonce,
+            HeldLimits::unlimited(),
             Some(metas),
         )],
     )
@@ -265,6 +272,7 @@ fn serialized_tx_footprint_under_packet_limit() {
         1,
         6,
         nonce,
+        HeldLimits::unlimited(),
         Some(metas),
     );
     let tx = Transaction::new_unsigned(Message::new(&[ix], Some(&fx.payer.pubkey())));
@@ -278,15 +286,54 @@ fn serialized_tx_footprint_under_packet_limit() {
 
 /// Account-lock analysis (runtime contention unmeasured under LiteSVM).
 #[test]
-fn contention_account_lock_analysis_documented() {
-    // Distinct (receiver, mint) shards → distinct writable guard_token/guard_state PDAs.
-    // Same (receiver, mint) → shared writable guard accounts → scheduler serializes.
-    // LiteSVM does not model multi-tx bank locks; mark runtime contention unmeasured.
+fn distinct_shards_share_no_writable_account() {
+    // Contention is decided by the writable set a transaction locks. Distinct (receiver, mint)
+    // shards must share nothing writable, or held delivery to unrelated receivers would
+    // serialize behind each other. Same shard deliberately does share, and serializes.
+    //
+    // This asserts the account-lock structure, which is what the design controls. Throughput
+    // under a real scheduler stays unmeasured: LiteSVM does not model bank locks.
+    use std::collections::HashSet;
     let program_id = token_2022_receive::id();
-    let mint = solana_sdk::pubkey::Pubkey::new_unique();
+    let mint_a = solana_sdk::pubkey::Pubkey::new_unique();
+    let mint_b = solana_sdk::pubkey::Pubkey::new_unique();
     let r1 = solana_sdk::pubkey::Pubkey::new_unique();
     let r2 = solana_sdk::pubkey::Pubkey::new_unique();
-    let (g1, _) = derive_guard_token_address(&r1, &mint, &program_id);
-    let (g2, _) = derive_guard_token_address(&r2, &mint, &program_id);
-    assert_ne!(g1, g2);
+
+    let writable = |receiver: &solana_sdk::pubkey::Pubkey,
+                    mint: &solana_sdk::pubkey::Pubkey|
+     -> HashSet<solana_sdk::pubkey::Pubkey> {
+        let (gt, _) = derive_guard_token_address(receiver, mint, &program_id);
+        let (gs, _) = derive_guard_state_address(receiver, mint, &program_id);
+        HashSet::from([gt, gs])
+    };
+
+    // Different receivers, same mint.
+    assert!(writable(&r1, &mint_a).is_disjoint(&writable(&r2, &mint_a)));
+    // Same receiver, different mints.
+    assert!(writable(&r1, &mint_a).is_disjoint(&writable(&r1, &mint_b)));
+    // Different receivers and mints.
+    assert!(writable(&r1, &mint_a).is_disjoint(&writable(&r2, &mint_b)));
+    // The same shard shares both writable accounts, by design.
+    assert_eq!(writable(&r1, &mint_a), writable(&r1, &mint_a));
+
+    // Receipts are per (receiver, mint, source_owner, nonce), so two senders holding into the
+    // same shard still write different receipt accounts.
+    let s1 = solana_sdk::pubkey::Pubkey::new_unique();
+    let s2 = solana_sdk::pubkey::Pubkey::new_unique();
+    let (rc1, _) = token_2022_receive::receipt::derive_receipt_address(
+        &r1,
+        &mint_a,
+        &s1,
+        &[0u8; 32],
+        &program_id,
+    );
+    let (rc2, _) = token_2022_receive::receipt::derive_receipt_address(
+        &r1,
+        &mint_a,
+        &s2,
+        &[0u8; 32],
+        &program_id,
+    );
+    assert_ne!(rc1, rc2);
 }

@@ -25,11 +25,21 @@ flowchart TD
   C -->|No| H[held → guard + receipt; Ok]
 ```
 
-| Outcome | Meaning |
-| --- | --- |
-| `failed` | Ordinary token / account-resolution failure (atomic; no receipt) |
-| `credited` | Policy accepts → `source → destination` |
-| `held` | Policy rejects → `source → guard` + receipt; instruction `Ok` |
+| Outcome | Meaning | Return data |
+| --- | --- | --- |
+| `failed` | Ordinary token / account-resolution failure (atomic; no receipt) | - (tx reverts) |
+| `credited` | Policy accepts → `source → destination` | `0` |
+| `held` | Policy rejects → `source → guard` + receipt; instruction `Ok` | `1` |
+
+`held` **succeeds**. Senders and indexers must read the outcome, not just transaction success -
+otherwise a diverted payment reads as a delivered one. A sender that will not accept held
+delivery at all can send with `HeldLimits::no_hold()`, which turns a policy rejection into a
+plain failure, and `previewOutcome` in the JS client says which outcome a transfer will get
+before it is sent. Held funds stay recoverable:
+the guard's spending authority is a PDA, so the receiver cannot spend them, and recovery is
+by `ClaimReceipt` or permissionless `CloseExpiredReceipt` after the TTL. A guard is refused as
+a transfer or mint destination, since tokens reaching it outside the held path would carry no
+receipt and could never be recovered.
 
 ## Status / non-claims
 
@@ -37,16 +47,18 @@ flowchart TD
 | --- | --- |
 | In tree | Reference program, host + LiteSVM suites, golden vectors, draft sRFC |
 | Measured | CU ceilings + footprints under LiteSVM (see [docs/VERIFICATION.md](docs/VERIFICATION.md)) |
-| Not claimed | Canonical Token-2022, TokenzQd wire compatibility, legacy USDC interception, full upstream extension parity, mainnet product |
+| Not claimed | Canonical Token-2022, TokenzQd wire compatibility, legacy USDC interception, full upstream extension parity, mainnet product, any upgrade or migration path |
 
 ## Tests
 
 ```bash
 export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
-cargo test -p token-2022-receive
 cargo build-sbf --manifest-path program/token-2022-receive/Cargo.toml
-cargo test -p token-2022-receive --test litesvm_before_after --test litesvm_lifecycle --test cu_ceilings -- --nocapture
+cargo test -p token-2022-receive
 ```
+
+Security-relevant regression suites: `guard_custody` (held funds unspendable by the receiver,
+outcome reporting) and `policy_bounds` (write-once policy, mode validation, bond/TTL caps).
 
 ## Layout
 

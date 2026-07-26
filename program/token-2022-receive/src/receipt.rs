@@ -25,7 +25,9 @@ pub struct Receipt {
     pub receiver_owner: Pubkey,
     pub recovery_authority_mode: u8,
     pub status: u8,
-    pub _padding: [u8; 6],
+    /// Layout version, taken from the existing padding so the account size is unchanged.
+    pub version: u8,
+    pub _padding: [u8; 5],
     pub recovery_authority: Pubkey,
     pub created_slot: u64,
     pub expires_slot: u64,
@@ -35,6 +37,7 @@ pub struct Receipt {
 }
 
 pub const RECEIPT_DISCRIMINATOR: u64 = 0x5245_4356_5243_5054; // "RECVRCPT"
+pub const RECEIPT_VERSION: u8 = 1;
 pub const RECEIPT_SIZE: usize = core::mem::size_of::<Receipt>();
 
 pub fn receipt_seeds<'a>(
@@ -82,50 +85,22 @@ pub fn assert_receipt_pda(
 }
 
 impl Receipt {
-    pub fn new(
-        amount: u64,
-        mint: Pubkey,
-        source_token_account: Pubkey,
-        source_owner: Pubkey,
-        destination_token_account: Pubkey,
-        receiver_owner: Pubkey,
-        recovery_authority_mode: RecoveryAuthorityMode,
-        recovery_authority: Pubkey,
-        created_slot: u64,
-        expires_slot: u64,
-        bond_lamports: u64,
-        bond_payer: Pubkey,
-        unique_nonce: [u8; 32],
-    ) -> Self {
-        Self {
-            discriminator: RECEIPT_DISCRIMINATOR,
-            amount,
-            mint,
-            source_token_account,
-            source_owner,
-            destination_token_account,
-            receiver_owner,
-            recovery_authority_mode: recovery_authority_mode as u8,
-            status: ReceiptStatus::Open as u8,
-            _padding: [0; 6],
-            recovery_authority,
-            created_slot,
-            expires_slot,
-            bond_lamports,
-            bond_payer,
-            unique_nonce,
-        }
-    }
-
     pub fn is_open(&self) -> bool {
         self.status == ReceiptStatus::Open as u8
     }
 
-    pub fn claim_authority(&self) -> Pubkey {
-        match self.recovery_authority_mode {
-            x if x == RecoveryAuthorityMode::Receiver as u8 => self.receiver_owner,
-            x if x == RecoveryAuthorityMode::ThirdParty as u8 => self.recovery_authority,
-            _ => self.source_owner,
-        }
+    /// Fail closed on an unrecognised mode rather than defaulting to `Originator`.
+    ///
+    /// Not reachable today: every writer parses the byte before storing it. Kept strict because
+    /// the failure mode is silent - a corrupt byte would hand recovery to whoever the default
+    /// names, and this function decides who may take the money.
+    pub fn claim_authority(&self) -> Result<Pubkey, ProgramError> {
+        Ok(
+            match RecoveryAuthorityMode::try_from_byte(self.recovery_authority_mode)? {
+                RecoveryAuthorityMode::Originator => self.source_owner,
+                RecoveryAuthorityMode::Receiver => self.receiver_owner,
+                RecoveryAuthorityMode::ThirdParty => self.recovery_authority,
+            },
+        )
     }
 }

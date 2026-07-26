@@ -2,6 +2,7 @@
 
 use crate::constants::ALLOWLIST_CAP;
 use crate::error::ReceiveTokenError;
+use crate::extension::receive_policy::RecoveryAuthorityMode;
 use solana_program::{
     instruction::{AccountMeta, Instruction},
     program_error::ProgramError,
@@ -39,7 +40,6 @@ pub enum ReceiveTokenInstruction {
 
     /// Ensure guard token account + guard state PDA exist for (receiver, mint).
     /// Accounts: payer (signer, w), receiver, mint, guard_token (w), guard_state (w),
-    ///           system_program, token_program(=self)
     EnsureGuard = 3,
 
     /// TransferChecked with optional held delivery.
@@ -50,13 +50,22 @@ pub enum ReceiveTokenInstruction {
     /// Policy destination (held path may need extras — always require when policy present):
     ///   source (w), mint, destination (w), authority (signer),
     ///   guard_token (w), guard_state (w), receipt (w), bond_payer (signer, w),
-    ///   system_program, clock
+    ///   system_program
+    ///
+    /// Clock and Rent are read via syscall, not passed as accounts.
     ///
     /// `unique_nonce` is client-supplied 32 bytes for receipt PDA uniqueness.
+    ///
+    /// `limits` are the sender's terms for a held outcome. The destination writes the policy,
+    /// but the sender pays for it: the bond is debited from `bond_payer` and the TTL decides how
+    /// long a rejected transfer stays locked. Without them a sender has no way to refuse a
+    /// destination that quietly raised either. `HeldLimits::unlimited()` preserves the old
+    /// behaviour, and `max_ttl_slots: 0` means "never hold me, fail instead".
     TransferChecked {
         amount: u64,
         decimals: u8,
         unique_nonce: [u8; 32],
+        limits: HeldLimits,
     } = 4,
 
     /// Full-claim held receipt → destination.
@@ -66,7 +75,7 @@ pub enum ReceiveTokenInstruction {
 
     /// Permissionless close after TTL: return tokens to source_owner ATA, refund bond.
     /// Accounts: receipt (w), guard_token (w), guard_state (w), source_owner_ata (w),
-    ///           mint, bond_dest (w), clock
+    ///           mint, bond_dest (w)
     CloseExpiredReceipt = 6,
 
     /// MintTo (minimal).
@@ -75,10 +84,28 @@ pub enum ReceiveTokenInstruction {
 }
 
 impl ReceiveTokenInstruction {
+    /// Decode instruction data.
+    ///
+    /// Every arm must consume its input exactly. Tolerating trailing bytes means there is no
+    /// canonical wire form, so a misrouted or mis-encoded instruction gets silently
+    /// reinterpreted as a valid one instead of rejected.
     pub fn unpack(input: &[u8]) -> Result<Self, ProgramError> {
         let (&tag, rest) = input
             .split_first()
             .ok_or(ReceiveTokenError::InvalidInstruction)?;
+        let mut trailing = rest;
+        let parsed = Self::unpack_body(tag, rest, &mut trailing)?;
+        if !trailing.is_empty() {
+            return Err(ReceiveTokenError::InvalidInstruction.into());
+        }
+        Ok(parsed)
+    }
+
+    fn unpack_body<'a>(
+        tag: u8,
+        rest: &'a [u8],
+        trailing: &mut &'a [u8],
+    ) -> Result<Self, ProgramError> {
         Ok(match tag {
             0 => {
                 let (&decimals, rest) = rest
@@ -88,11 +115,17 @@ impl ReceiveTokenInstruction {
                 let (&fa_tag, rest) = rest
                     .split_first()
                     .ok_or(ReceiveTokenError::InvalidInstruction)?;
-                let freeze_authority = if fa_tag == 0 {
-                    None
-                } else {
-                    let (pk, _) = unpack_pubkey(rest)?;
-                    Some(pk)
+                let freeze_authority = match fa_tag {
+                    0 => {
+                        *trailing = rest;
+                        None
+                    }
+                    1 => {
+                        let (pk, next) = unpack_pubkey(rest)?;
+                        *trailing = next;
+                        Some(pk)
+                    }
+                    _ => return Err(ReceiveTokenError::InvalidInstruction.into()),
                 };
                 Self::InitializeMint2 {
                     decimals,
@@ -101,7 +134,8 @@ impl ReceiveTokenInstruction {
                 }
             }
             1 => {
-                let (owner, _) = unpack_pubkey(rest)?;
+                let (owner, next) = unpack_pubkey(rest)?;
+                *trailing = next;
                 Self::InitializeAccount3 { owner }
             }
             2 => {
@@ -128,6 +162,7 @@ impl ReceiveTokenInstruction {
                     allowlist.push(pk);
                     cursor = next;
                 }
+                *trailing = cursor;
                 Self::InitializeReceivePolicy {
                     min_amount,
                     source_owner_mode,
@@ -138,7 +173,10 @@ impl ReceiveTokenInstruction {
                     allowlist,
                 }
             }
-            3 => Self::EnsureGuard,
+            3 => {
+                *trailing = rest;
+                Self::EnsureGuard
+            }
             4 => {
                 let (amount, rest) = unpack_u64(rest)?;
                 let (&decimals, rest) = rest
@@ -149,16 +187,34 @@ impl ReceiveTokenInstruction {
                 }
                 let mut unique_nonce = [0u8; 32];
                 unique_nonce.copy_from_slice(&rest[..32]);
+                let (max_bond_lamports, rest) = unpack_u64(&rest[32..])?;
+                let (max_ttl_slots, rest) = unpack_u64(rest)?;
+                let (&max_recovery_mode, rest) = rest
+                    .split_first()
+                    .ok_or(ReceiveTokenError::InvalidInstruction)?;
+                *trailing = rest;
                 Self::TransferChecked {
                     amount,
                     decimals,
                     unique_nonce,
+                    limits: HeldLimits {
+                        max_bond_lamports,
+                        max_ttl_slots,
+                        max_recovery_mode,
+                    },
                 }
             }
-            5 => Self::ClaimReceipt,
-            6 => Self::CloseExpiredReceipt,
+            5 => {
+                *trailing = rest;
+                Self::ClaimReceipt
+            }
+            6 => {
+                *trailing = rest;
+                Self::CloseExpiredReceipt
+            }
             7 => {
-                let (amount, _) = unpack_u64(rest)?;
+                let (amount, next) = unpack_u64(rest)?;
+                *trailing = next;
                 Self::MintTo { amount }
             }
             _ => return Err(ReceiveTokenError::InvalidInstruction.into()),
@@ -214,11 +270,15 @@ impl ReceiveTokenInstruction {
                 amount,
                 decimals,
                 unique_nonce,
+                limits,
             } => {
                 buf.push(4);
                 buf.extend_from_slice(&amount.to_le_bytes());
                 buf.push(*decimals);
                 buf.extend_from_slice(unique_nonce);
+                buf.extend_from_slice(&limits.max_bond_lamports.to_le_bytes());
+                buf.extend_from_slice(&limits.max_ttl_slots.to_le_bytes());
+                buf.push(limits.max_recovery_mode);
             }
             Self::ClaimReceipt => buf.push(5),
             Self::CloseExpiredReceipt => buf.push(6),
@@ -228,6 +288,48 @@ impl ReceiveTokenInstruction {
             }
         }
         buf
+    }
+}
+
+/// Sender-declared ceilings on a held outcome.
+///
+/// Bounding cost alone is not enough: `max_recovery_mode` bounds *custody*. Under
+/// `RecoveryAuthorityMode::Receiver` or `ThirdParty` the party that rejected the payment also
+/// chooses who may claim it, so a sender that caps only the bond and the TTL has still handed the
+/// destination discretion over the funds. The modes are ordered by how much the sender gives up:
+/// `Originator`(0) keeps recovery with the sender, `Receiver`(1) and `ThirdParty`(2) do not.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HeldLimits {
+    pub max_bond_lamports: u64,
+    pub max_ttl_slots: u64,
+    pub max_recovery_mode: u8,
+}
+
+impl HeldLimits {
+    /// Accept whatever the destination's policy says.
+    pub fn unlimited() -> Self {
+        Self {
+            max_bond_lamports: u64::MAX,
+            max_ttl_slots: u64::MAX,
+            max_recovery_mode: RecoveryAuthorityMode::ThirdParty as u8,
+        }
+    }
+
+    /// Refuse held delivery outright: a policy rejection becomes `failed`, not `held`.
+    pub fn no_hold() -> Self {
+        Self {
+            max_bond_lamports: 0,
+            max_ttl_slots: 0,
+            max_recovery_mode: RecoveryAuthorityMode::Originator as u8,
+        }
+    }
+
+    /// Accept a hold only if the sender itself remains the recovery authority.
+    pub fn originator_recovery_only() -> Self {
+        Self {
+            max_recovery_mode: RecoveryAuthorityMode::Originator as u8,
+            ..Self::unlimited()
+        }
     }
 }
 
@@ -249,7 +351,14 @@ fn unpack_u64(input: &[u8]) -> Result<(u64, &[u8]), ProgramError> {
 }
 
 // —— Instruction builders (client helpers) ——
+//
+// Positional arguments in account order, mirroring `spl_token::instruction::*` so the
+// signatures read the way a Solana developer already expects and can be checked against the
+// account lists in SPEC section 8. Unlike a constructor for persistent on-chain state, a
+// mis-ordered call here does not survive: the program re-derives every PDA and re-checks every
+// mint and owner, so a swap fails the transaction rather than writing a wrong record.
 
+#[allow(clippy::too_many_arguments)]
 pub fn initialize_mint2(
     program_id: &Pubkey,
     mint: &Pubkey,
@@ -270,6 +379,7 @@ pub fn initialize_mint2(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn initialize_account3(
     program_id: &Pubkey,
     account: &Pubkey,
@@ -287,6 +397,7 @@ pub fn initialize_account3(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn initialize_receive_policy(
     program_id: &Pubkey,
     token_account: &Pubkey,
@@ -319,6 +430,7 @@ pub fn initialize_receive_policy(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn transfer_checked(
     program_id: &Pubkey,
     source: &Pubkey,
@@ -328,6 +440,7 @@ pub fn transfer_checked(
     amount: u64,
     decimals: u8,
     unique_nonce: [u8; 32],
+    limits: HeldLimits,
     // When destination has ReceivePolicy, pass these; otherwise `None`.
     policy_accounts: Option<PolicyTransferAccounts>,
 ) -> Instruction {
@@ -335,6 +448,7 @@ pub fn transfer_checked(
         amount,
         decimals,
         unique_nonce,
+        limits,
     }
     .pack();
     let mut accounts = vec![
@@ -365,6 +479,7 @@ pub struct PolicyTransferAccounts {
     pub bond_payer: Pubkey,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn claim_receipt(
     program_id: &Pubkey,
     receipt: &Pubkey,
@@ -390,6 +505,7 @@ pub fn claim_receipt(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn close_expired_receipt(
     program_id: &Pubkey,
     receipt: &Pubkey,
@@ -413,6 +529,7 @@ pub fn close_expired_receipt(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn mint_to(
     program_id: &Pubkey,
     mint: &Pubkey,
@@ -431,6 +548,7 @@ pub fn mint_to(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn ensure_guard(
     program_id: &Pubkey,
     payer: &Pubkey,

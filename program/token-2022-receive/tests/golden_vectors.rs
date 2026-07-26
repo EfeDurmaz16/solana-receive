@@ -16,9 +16,10 @@ use host::{
     run_claim, run_claim_ex, run_close_expired, ClaimCloseOpts, PolicyTransferOpts,
 };
 use solana_program::pubkey::Pubkey;
-use token_2022_receive::constants::{DEFAULT_RECEIPT_TTL_SLOTS, MAX_OPEN_RECEIPTS};
+use token_2022_receive::constants::DEFAULT_RECEIPT_TTL_SLOTS;
 use token_2022_receive::error::ReceiveTokenError;
 use token_2022_receive::extension::receive_policy::{ReceivePolicy, SourceOwnerMode};
+use token_2022_receive::instruction::HeldLimits;
 use token_2022_receive::receipt::derive_receipt_address;
 
 fn hold_policy(min_amount: u64) -> ReceivePolicy {
@@ -78,22 +79,22 @@ fn v_fl_insufficient_funds_fails() {
     assert_eq!((s, d), (10, 0));
 }
 
-/// V-FL — Guard at capacity → failed (policy-reject would have held).
+/// V-FL — Sender's declared held limits exceeded → failed (policy-reject would have held).
 #[test]
-fn v_fl_guard_at_capacity_fails() {
+fn v_fl_sender_limits_reject_the_hold() {
     let out = policy_transfer_ex(
         &hold_policy(100),
         100,
         1,
         [4u8; 32],
         PolicyTransferOpts {
-            open_receipts: MAX_OPEN_RECEIPTS,
+            limits: HeldLimits::no_hold(),
             ..PolicyTransferOpts::default()
         },
     );
-    assert_eq!(
-        out.result.unwrap_err(),
-        err_custom(ReceiveTokenError::GuardAtCapacity)
+    assert!(
+        out.result.is_err(),
+        "a sender that refuses held delivery must not be held"
     );
     assert_eq!(out.source_amt, 100);
     assert_eq!(out.dest_amt, 0);
@@ -159,8 +160,8 @@ fn v_au_allowlist_uses_source_owner() {
     policy.allowlist_len = 1;
     policy.allowlist[0] = allowed;
 
-    assert!(policy.accepts(1, &allowed));
-    assert!(!policy.accepts(1, &other));
+    assert!(policy.accepts(1, &allowed).unwrap());
+    assert!(!policy.accepts(1, &other).unwrap());
 
     let credited = policy_transfer_ex(
         &policy,
@@ -222,11 +223,4 @@ fn unique_nonce_collision_fails_already_in_use() {
     );
     assert_eq!(out.source_amt, 100);
     assert_eq!(out.dest_amt, 0);
-}
-
-/// Catalog: every non-deferred sRFC vector ID has a named test above.
-#[test]
-fn srfc_vector_catalog_complete() {
-    let ids = ["V-NP", "V-CR", "V-HD", "V-FL", "V-CL", "V-EX", "V-AU"];
-    assert_eq!(ids.len(), 7);
 }

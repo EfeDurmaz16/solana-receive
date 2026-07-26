@@ -14,8 +14,9 @@ pub const MINT_SIZE: usize = 82;
 pub const ACCOUNT_SIZE: usize = 165;
 
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AccountState {
+    #[default]
     Uninitialized = 0,
     Initialized = 1,
     Frozen = 2,
@@ -40,12 +41,6 @@ pub struct TokenAccount {
     pub is_native: COption<u64>,
     pub delegated_amount: u64,
     pub close_authority: COption<Pubkey>,
-}
-
-impl Default for AccountState {
-    fn default() -> Self {
-        Self::Uninitialized
-    }
 }
 
 impl TokenAccount {
@@ -148,6 +143,18 @@ impl Pack for TokenAccount {
         *delegated_amount = self.delegated_amount.to_le_bytes();
         pack_coption_key(&self.close_authority, close_authority);
     }
+}
+
+/// Decode a live mint, rejecting short buffers instead of aborting the program.
+pub fn unpack_mint(data: &[u8]) -> Result<Mint, ProgramError> {
+    if data.len() < MINT_SIZE {
+        return Err(ReceiveTokenError::InvalidAccountData.into());
+    }
+    let mint = Mint::unpack_from_slice(&data[..MINT_SIZE])?;
+    if !mint.is_initialized() {
+        return Err(ReceiveTokenError::InvalidAccountData.into());
+    }
+    Ok(mint)
 }
 
 fn unpack_coption_key(src: &[u8; 36]) -> Result<COption<Pubkey>, ProgramError> {

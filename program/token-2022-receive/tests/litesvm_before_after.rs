@@ -12,6 +12,7 @@ mod litesvm_helpers;
 use litesvm_helpers::{send, token_amount, Fixture};
 use solana_sdk::signature::Signer;
 use token_2022_receive::guard::{derive_guard_state_address, derive_guard_token_address};
+use token_2022_receive::instruction::HeldLimits;
 use token_2022_receive::instruction::{transfer_checked, PolicyTransferAccounts};
 use token_2022_receive::receipt::derive_receipt_address;
 
@@ -32,6 +33,7 @@ fn before_no_policy_dust_credits_destination() {
             dust,
             6,
             [0u8; 32],
+            HeldLimits::unlimited(),
             None,
         )],
     )
@@ -72,6 +74,7 @@ fn after_policy_dust_is_held_not_credited() {
             dust,
             6,
             nonce,
+            HeldLimits::unlimited(),
             Some(PolicyTransferAccounts {
                 guard_token,
                 guard_state,
@@ -127,6 +130,7 @@ fn after_policy_accepted_credits_destination() {
             amount,
             6,
             nonce,
+            HeldLimits::unlimited(),
             Some(PolicyTransferAccounts {
                 guard_token,
                 guard_state,
@@ -164,6 +168,7 @@ fn after_policy_missing_metas_fails() {
             1,
             6,
             [1u8; 32],
+            HeldLimits::unlimited(),
             None,
         )],
     )

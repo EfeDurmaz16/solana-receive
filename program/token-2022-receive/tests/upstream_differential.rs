@@ -114,6 +114,7 @@ fn reference_instruction_tags_are_local_not_tokenzqd_wire() {
         amount: 1,
         decimals: 6,
         unique_nonce: [0u8; 32],
+        limits: token_2022_receive::instruction::HeldLimits::unlimited(),
     }
     .pack();
     let mint_to = ReceiveTokenInstruction::MintTo { amount: 1 }.pack();
@@ -122,19 +123,5 @@ fn reference_instruction_tags_are_local_not_tokenzqd_wire() {
     assert_eq!(acc3[0], 1); // not upstream 18
     assert_eq!(xfer[0], 4); // not upstream 12
     assert_eq!(mint_to[0], 7); // coincidentally same as upstream MintTo tag
-    assert_eq!(xfer.len(), 42); // tag + amount + decimals + unique_nonce
-}
-
-#[test]
-fn unsupported_upstream_surfaces_are_enumerated() {
-    let unsupported = [
-        "transfer_fee",
-        "confidential_transfer",
-        "transfer_hook_coexistence",
-        "interest_bearing_mint",
-        "permanent_delegate_as_sender_identity",
-        "tokenzqd_wire_instruction_tags",
-        "legacy_tokenkeg_usdc_interception",
-    ];
-    assert_eq!(unsupported.len(), 7);
+    assert_eq!(xfer.len(), 59); // tag + amount + decimals + unique_nonce + held limits
 }

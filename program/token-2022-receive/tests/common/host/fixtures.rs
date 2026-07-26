@@ -7,6 +7,7 @@ use token_2022_receive::extension::receive_policy::ReceivePolicy;
 use token_2022_receive::guard::{
     derive_guard_state_address, derive_guard_token_address, GuardState, GUARD_STATE_SIZE,
 };
+use token_2022_receive::instruction::HeldLimits;
 use token_2022_receive::instruction::{
     claim_receipt, close_expired_receipt, transfer_checked, PolicyTransferAccounts,
 };
@@ -76,6 +77,7 @@ pub fn no_policy_transfer(
         amount,
         ix_decimals,
         [0u8; 32],
+        HeldLimits::unlimited(),
         None,
     );
     let result = process_instruction(&pid, &accounts, &ix.data);
@@ -89,7 +91,7 @@ pub struct PolicyTransferResult {
     pub guard_amt: u64,
     pub receipt_lamports: u64,
     pub receipt_data: Vec<u8>,
-    pub open_receipts: u8,
+    pub open_receipts: u64,
     pub receipt_owner: Pubkey,
     pub source_owner: Pubkey,
 }
@@ -117,12 +119,14 @@ pub fn policy_transfer(
 #[derive(Clone, Copy)]
 pub struct PolicyTransferOpts {
     pub with_metas: bool,
-    /// Seed `guard_state.open_receipts` before the transfer (capacity tests).
-    pub open_receipts: u8,
+    /// Seed `guard_state.open_receipts` before the transfer.
+    pub open_receipts: u64,
     /// If true, prefill receipt account data so a held create hits `AlreadyInUse`.
     pub receipt_prefilled: bool,
     /// Fixed source owner (allowlist membership tests).
     pub source_owner: Option<Pubkey>,
+    /// Sender-declared ceilings on a held outcome.
+    pub limits: HeldLimits,
 }
 
 impl Default for PolicyTransferOpts {
@@ -132,6 +136,7 @@ impl Default for PolicyTransferOpts {
             open_receipts: 0,
             receipt_prefilled: false,
             source_owner: None,
+            limits: HeldLimits::unlimited(),
         }
     }
 }
@@ -177,7 +182,7 @@ pub fn policy_transfer_ex(
         let mut source_data = pack_token(mint, source_owner, source_amt);
         let mut dest_data = pack_policy_account(mint, dest_owner, 0, policy);
         let mut auth_data = vec![];
-        let mut guard_token_data = pack_token(mint, pid, 0);
+        let mut guard_token_data = pack_token(mint, guard_state, 0);
         let mut gs = GuardState::new(dest_owner, mint, guard_token);
         gs.open_receipts = opts.open_receipts;
         let mut guard_state_data = bytes_of(&gs).to_vec();
@@ -264,6 +269,7 @@ pub fn policy_transfer_ex(
                 amount,
                 6,
                 nonce,
+                opts.limits,
                 Some(PolicyTransferAccounts {
                     guard_token,
                     guard_state,
@@ -309,6 +315,7 @@ pub fn policy_transfer_ex(
                 amount,
                 6,
                 nonce,
+                HeldLimits::unlimited(),
                 None,
             );
             process_instruction(&pid, &accounts, &ix.data)
@@ -351,7 +358,7 @@ pub struct ReceiptLifecycleResult {
     pub dest_amt: u64,
     pub bond_lamports: u64,
     pub receipt_lamports: u64,
-    pub open_receipts: u8,
+    pub open_receipts: u64,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -405,21 +412,25 @@ fn settle_receipt(
             Settle::Claim => 0,
             Settle::Close { dest_prior, .. } => dest_prior,
         };
-        let receipt = Receipt::new(
+        let receipt = Receipt {
+            discriminator: token_2022_receive::receipt::RECEIPT_DISCRIMINATOR,
             amount,
             mint,
-            Pubkey::new_unique(),
+            source_token_account: Pubkey::new_unique(),
             source_owner,
-            Pubkey::new_unique(),
-            dest_owner,
-            recovery,
-            Pubkey::default(),
-            created,
-            expires,
-            bond,
+            destination_token_account: Pubkey::new_unique(),
+            receiver_owner: dest_owner,
+            recovery_authority_mode: recovery as u8,
+            status: token_2022_receive::receipt::ReceiptStatus::Open as u8,
+            version: token_2022_receive::receipt::RECEIPT_VERSION,
+            _padding: [0; 5],
+            recovery_authority: Pubkey::default(),
+            created_slot: created,
+            expires_slot: expires,
+            bond_lamports: bond,
             bond_payer,
-            nonce,
-        );
+            unique_nonce: nonce,
+        };
 
         let mut receipt_lamports = bond;
         let mut gtl = 1u64;
@@ -429,9 +440,10 @@ fn settle_receipt(
         let mut auth_l = 1u64;
         let mut bond_l = 0u64;
         let mut receipt_data = bytes_of(&receipt).to_vec();
-        let mut guard_token_data = pack_token(mint, pid, amount);
+        let mut guard_token_data = pack_token(mint, guard_state, amount);
         let mut gs = GuardState::new(dest_owner, mint, guard_token_pda);
         gs.open_receipts = 1;
+        gs.held_amount = amount;
         let mut guard_state_data = bytes_of(&gs).to_vec();
         let mut dest_data = pack_token(mint, source_owner, dest_prior);
         let mut mint_data = pack_mint(6, Pubkey::new_unique());
@@ -613,6 +625,7 @@ pub fn ix_account_counts() -> (usize, usize, usize, usize) {
         1,
         6,
         [0u8; 32],
+        HeldLimits::unlimited(),
         Some(PolicyTransferAccounts {
             guard_token: k[4],
             guard_state: k[5],
@@ -620,7 +633,18 @@ pub fn ix_account_counts() -> (usize, usize, usize, usize) {
             bond_payer: k[7],
         }),
     );
-    let no_policy = transfer_checked(&pid, &k[0], &k[1], &k[2], &k[3], 1, 6, [0u8; 32], None);
+    let no_policy = transfer_checked(
+        &pid,
+        &k[0],
+        &k[1],
+        &k[2],
+        &k[3],
+        1,
+        6,
+        [0u8; 32],
+        HeldLimits::unlimited(),
+        None,
+    );
     let c: Vec<Pubkey> = (0..7).map(|_| Pubkey::new_unique()).collect();
     let claim = claim_receipt(&pid, &c[0], &c[1], &c[2], &c[3], &c[4], &c[5], &c[6]);
     let close = close_expired_receipt(&pid, &c[0], &c[1], &c[2], &c[3], &c[4], &c[5]);
@@ -644,6 +668,7 @@ pub fn policy_ix_data_len() -> usize {
         1,
         6,
         [0u8; 32],
+        HeldLimits::unlimited(),
         Some(PolicyTransferAccounts {
             guard_token: k[4],
             guard_state: k[5],

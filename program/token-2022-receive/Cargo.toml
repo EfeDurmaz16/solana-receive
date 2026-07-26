@@ -9,6 +9,15 @@ readme = "README.md"
 [lib]
 crate-type = ["cdylib", "lib"]
 
+# The solana entrypoint! macro expands to cfgs this crate never sets. Declaring them as
+# expected keeps `-D warnings` meaningful instead of blanket-allowing the whole lint.
+[lints.rust.unexpected_cfgs]
+level = "warn"
+check-cfg = [
+    'cfg(target_os, values("solana"))',
+    'cfg(feature, values("custom-heap", "custom-panic"))',
+]
+
 [features]
 no-entrypoint = []
 default = []
