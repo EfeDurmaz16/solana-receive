@@ -13,6 +13,5 @@
   },
   "overrides": {
     "@codama/nodes": "1.8.0"
-  },
-  "_comment_overrides": "@codama/nodes@1.10 omits empty struct.fields; renderers-js 2.3 crashes on InstructionExtra. Pin 1.8 until upstream fixes empty-struct fields."
+  }
 }
