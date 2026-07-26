@@ -12,6 +12,7 @@
 - [x] Reference program demonstrates `credited` and `held` without breaking no-policy transfers.
 - [~] Differential vs upstream: **layout + no-policy amount overlap** in-tree (`upstream_differential`); **not** full `TokenzQd` execution parity — do not check this gate as done for SIMD.
 - [x] Measured account count, tx size, CU ceilings, and writable-lock analysis published ([VERIFICATION](../VERIFICATION.md)).
+- [x] Wire surface frozen for clients ([WIRE](../WIRE.md)); Kit/Codama client in `clients/js`.
 - [ ] Canonical open questions reduced (mint allow-flag, account-resolution shape) — see [decision-request.md](./decision-request.md).
 
 **If any gate fails:** keep sRFC + custom program ID; do not file a SIMD.
