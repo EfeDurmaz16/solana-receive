@@ -123,7 +123,9 @@ pub fn process_transfer_checked(
     };
 
     if source_info.key == destination_info.key {
-        return Ok(());
+        // Nothing moves, but this is a success path and must report an outcome like the
+        // others: integrators are told to read the byte rather than trust tx success.
+        return credited();
     }
 
     if !dest_has_policy {
@@ -150,8 +152,6 @@ pub fn process_transfer_checked(
     assert_guard_token_pda(guard_token, &dest_owner, &dest_mint, program_id)?;
     assert_guard_state_pda(guard_state, &dest_owner, &dest_mint, program_id)?;
 
-    load_guard_state(guard_state, guard_token.key, &dest_owner, &dest_mint)?;
-
     // Defense in depth: the guard is never a transfer source. Unreachable while the guard's
     // token-level owner is a PDA, but pinned here so an owner-field regression cannot silently
     // re-open receipt minting against undeposited guard balance.
@@ -170,6 +170,11 @@ pub fn process_transfer_checked(
         if amount == 0 {
             return Err(ReceiveTokenError::InsufficientFunds.into());
         }
+
+        // Validated here rather than before the accept/reject branch: only the held path
+        // touches guard state, and requiring it on the credited path would make an otherwise
+        // valid credit fail whenever EnsureGuard had not been run.
+        load_guard_state(guard_state, guard_token.key, &dest_owner, &dest_mint)?;
 
         {
             let mut gs_data = guard_state.try_borrow_mut_data()?;

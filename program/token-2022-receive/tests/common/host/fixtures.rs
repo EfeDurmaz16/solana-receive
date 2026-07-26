@@ -177,7 +177,7 @@ pub fn policy_transfer_ex(
         let mut source_data = pack_token(mint, source_owner, source_amt);
         let mut dest_data = pack_policy_account(mint, dest_owner, 0, policy);
         let mut auth_data = vec![];
-        let mut guard_token_data = pack_token(mint, pid, 0);
+        let mut guard_token_data = pack_token(mint, guard_state, 0);
         let mut gs = GuardState::new(dest_owner, mint, guard_token);
         gs.open_receipts = opts.open_receipts;
         let mut guard_state_data = bytes_of(&gs).to_vec();
@@ -432,7 +432,7 @@ fn settle_receipt(
         let mut auth_l = 1u64;
         let mut bond_l = 0u64;
         let mut receipt_data = bytes_of(&receipt).to_vec();
-        let mut guard_token_data = pack_token(mint, pid, amount);
+        let mut guard_token_data = pack_token(mint, guard_state, amount);
         let mut gs = GuardState::new(dest_owner, mint, guard_token_pda);
         gs.open_receipts = 1;
         let mut guard_state_data = bytes_of(&gs).to_vec();

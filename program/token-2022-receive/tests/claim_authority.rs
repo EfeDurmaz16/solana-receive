@@ -25,7 +25,6 @@ struct Held {
     guard_token: Pubkey,
     guard_state: Pubkey,
     receipt: Pubkey,
-    dest: Keypair,
 }
 
 /// Build a policy destination with an explicit recovery mode, then hold 99 tokens in its guard.
@@ -139,7 +138,6 @@ fn hold_with_recovery(
         guard_token,
         guard_state,
         receipt,
-        dest,
     }
 }
 
@@ -173,9 +171,6 @@ fn receiver_recovery_mode_lets_the_receiver_claim() {
     )
     .expect("receiver claims under Receiver mode");
     assert_eq!(token_amount(&fx.svm, &payout.pubkey()), 99);
-
-    // ...and the originator must not.
-    let _ = held.dest;
 }
 
 #[test]
@@ -306,7 +301,9 @@ fn expiry_close_rejects_guard_as_the_source_owner_account() {
     fx.svm.warp_to_slot(DEFAULT_RECEIPT_TTL_SLOTS + 10);
     fx.svm.expire_blockhash();
 
-    // CloseExpiredReceipt is permissionless, so this shape is reachable by anyone.
+    // CloseExpiredReceipt is permissionless, so this shape is reachable by anyone. Two checks
+    // reject it (the guard's owner is not the receipt's source_owner, and require_distinct_payout);
+    // this asserts the outcome, not which one fires first.
     send(
         &mut fx.svm,
         &fx.payer,

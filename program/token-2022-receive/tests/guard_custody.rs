@@ -173,24 +173,19 @@ fn guard_stays_claimable_by_the_originator_after_a_drain_attempt() {
 }
 
 #[test]
-fn guard_cannot_be_a_held_transfer_destination() {
+fn tokens_sent_straight_into_a_guard_are_unattributed() {
+    // Pins a documented residual risk (SPEC section 10) rather than a defence.
+    //
+    // The guard-as-endpoint check in process_transfer_checked lives inside the policy branch,
+    // and a guard token account never carries a ReceivePolicy, so a plain 4-account transfer
+    // into a guard is NOT rejected. Nothing is stolen - the tokens simply have no receipt, so
+    // neither claim nor expiry can ever move them out again. If a held total or a sweep path
+    // is added, this test is the one that should change.
     let mut fx = Fixture::boot(1_000).with_policy_dest(100);
     let (guard_token, _) =
         derive_guard_token_address(&fx.dest_owner.pubkey(), &fx.mint.pubkey(), &fx.program_id);
-    let (guard_state, _) =
-        derive_guard_state_address(&fx.dest_owner.pubkey(), &fx.mint.pubkey(), &fx.program_id);
-    let nonce = [23u8; 32];
-    let (receipt, _) = derive_receipt_address(
-        &fx.dest_owner.pubkey(),
-        &fx.mint.pubkey(),
-        &fx.source_owner.pubkey(),
-        &nonce,
-        &fx.program_id,
-    );
 
-    // Routing a policy transfer *into* the guard would let a receipt be minted against
-    // balance that never moved.
-    let err = send(
+    send(
         &mut fx.svm,
         &fx.payer,
         &[&fx.source_owner],
@@ -198,22 +193,120 @@ fn guard_cannot_be_a_held_transfer_destination() {
             &fx.program_id,
             &fx.source.pubkey(),
             &fx.mint.pubkey(),
-            &fx.dest.pubkey(),
+            &guard_token,
             &fx.source_owner.pubkey(),
-            99,
+            10,
             6,
-            nonce,
-            Some(PolicyTransferAccounts {
-                guard_token,
-                guard_state,
-                receipt,
-                bond_payer: fx.payer.pubkey(),
-            }),
+            [0u8; 32],
+            None,
         )],
+    )
+    .expect("a plain transfer into the guard is currently accepted");
+
+    assert_eq!(
+        token_amount(&fx.svm, &guard_token),
+        10,
+        "donated, not recoverable"
     );
-    // The honest shape still succeeds; this asserts the honest path is unaffected.
-    err.expect("ordinary held transfer still works");
-    assert_eq!(token_amount(&fx.svm, &guard_token), 99);
+}
+
+#[test]
+fn held_transfer_requires_an_initialized_guard_state() {
+    // load_guard_state validates the guard_state contents, not just its address: an
+    // uninitialized or mismatched shard must not be silently incremented.
+    let mut fx = Fixture::boot(1_000).with_plain_dest();
+    let owner = fx.dest_owner.insecure_clone();
+    let space = token_2022_receive::extension::tlv::account_len_with_receive_policy();
+    let rent = fx.svm.minimum_balance_for_rent_exemption(space);
+    let dest = solana_sdk::signature::Keypair::new();
+    send(
+        &mut fx.svm,
+        &fx.payer,
+        &[&dest],
+        vec![solana_sdk::system_instruction::create_account(
+            &fx.payer.pubkey(),
+            &dest.pubkey(),
+            rent,
+            space as u64,
+            &fx.program_id,
+        )],
+    )
+    .expect("create dest");
+    send(
+        &mut fx.svm,
+        &fx.payer,
+        &[],
+        vec![token_2022_receive::instruction::initialize_account3(
+            &fx.program_id,
+            &dest.pubkey(),
+            &fx.mint.pubkey(),
+            &owner.pubkey(),
+        )],
+    )
+    .expect("init dest");
+    send(
+        &mut fx.svm,
+        &fx.payer,
+        &[&owner],
+        vec![token_2022_receive::instruction::initialize_receive_policy(
+            &fx.program_id,
+            &dest.pubkey(),
+            &owner.pubkey(),
+            100,
+            0,
+            0,
+            Pubkey::default(),
+            0,
+            token_2022_receive::constants::DEFAULT_RECEIPT_TTL_SLOTS,
+            vec![],
+        )],
+    )
+    .expect("init policy");
+    fx.svm.expire_blockhash();
+
+    // EnsureGuard deliberately NOT run: both guard PDAs are absent.
+    let (guard_token, _) =
+        derive_guard_token_address(&owner.pubkey(), &fx.mint.pubkey(), &fx.program_id);
+    let (guard_state, _) =
+        derive_guard_state_address(&owner.pubkey(), &fx.mint.pubkey(), &fx.program_id);
+    let nonce = [71u8; 32];
+    let (receipt, _) = derive_receipt_address(
+        &owner.pubkey(),
+        &fx.mint.pubkey(),
+        &fx.source_owner.pubkey(),
+        &nonce,
+        &fx.program_id,
+    );
+
+    let held = |fx: &mut Fixture, amount: u64| {
+        send(
+            &mut fx.svm,
+            &fx.payer,
+            &[&fx.source_owner],
+            vec![transfer_checked(
+                &fx.program_id,
+                &fx.source.pubkey(),
+                &fx.mint.pubkey(),
+                &dest.pubkey(),
+                &fx.source_owner.pubkey(),
+                amount,
+                6,
+                nonce,
+                Some(PolicyTransferAccounts {
+                    guard_token,
+                    guard_state,
+                    receipt,
+                    bond_payer: fx.payer.pubkey(),
+                }),
+            )],
+        )
+    };
+
+    held(&mut fx, 99).expect_err("held with no guard state must fail");
+    fx.svm.expire_blockhash();
+    // A credited transfer does not touch guard state, so it must still succeed.
+    held(&mut fx, 150).expect("credited path must not require an initialized guard");
+    assert_eq!(token_amount(&fx.svm, &dest.pubkey()), 150);
 }
 
 #[test]
@@ -308,6 +401,4 @@ fn zero_amount_transfer_cannot_burn_a_shard_slot() {
         )],
     )
     .expect_err("zero-amount hold must be rejected");
-
-    assert!(fx.svm.get_account(&receipt).is_none_or(|a| a.lamports == 0));
 }

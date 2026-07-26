@@ -83,9 +83,16 @@ Policy accepts → amount credited to destination. No receipt. Instruction succe
 
 Policy rejects an otherwise token-valid transfer → amount routes **source → guard**; receipt created; destination unchanged; instruction `Ok`.
 
-Because `held` succeeds, the instruction reports the outcome as one byte of **return data** -
-`0` credited, `1` held - and logs it. A caller that checks only whether the transaction landed
-will read a held transfer as a delivered payment; integrators MUST read the outcome.
+Because `held` succeeds, the instruction reports the outcome two ways: a `msg!` log line, and
+one byte of **return data** (`0` credited, `1` held). A caller that checks only whether the
+transaction landed will read a held transfer as a delivered payment; integrators MUST read the
+outcome.
+
+Return data is a single transaction-scoped slot that the runtime clears when the next
+instruction begins, so only the last instruction's byte survives a multi-instruction
+transaction. It is authoritative for a **CPI caller**, which reads it immediately. Off-chain
+consumers of a multi-instruction transaction should read the per-instruction log line, or the
+destination balance, instead of assuming the byte belongs to their transfer.
 
 ```mermaid
 flowchart TD
@@ -107,8 +114,12 @@ flowchart TD
 are `ClaimReceipt` and `CloseExpiredReceipt`. The receiver is the party whose policy rejected
 the transfer, and is therefore exactly the party held custody must be protected against;
 making the receiver the guard's spending authority would let one signature confiscate every
-sender's held balance in the shard. Transfer processing additionally rejects the guard as
-either endpoint of a `TransferChecked`.
+sender's held balance in the shard.
+
+Transfer processing additionally rejects the guard as either endpoint of a policy
+`TransferChecked`. That check is defence in depth against a regression, not a reachable path:
+the guard is unsignable, and it never carries a policy of its own. It does **not** cover the
+no-policy path, so an ordinary transfer may still credit a guard - see residual risks.
 
 ## 7. Receipt lifecycle
 
@@ -158,12 +169,12 @@ destination owner is hostile.
 
 | Threat | Mitigation |
 | --- | --- |
-| **Receiver spends held custody directly** | Guard token authority is the `guard_state` PDA (unsignable); guard rejected as a transfer endpoint |
+| **Receiver spends held custody directly** | Guard token authority is the `guard_state` PDA (unsignable); guard also rejected as an endpoint of a policy transfer |
 | **Policy rewritten mid-flight to seize an in-flight payment** | Policy is write-once |
 | **Receiver-set bond / TTL used to grief the sender** | Capped by `MAX_RECEIPT_BOND_LAMPORTS` / `MAX_RECEIPT_TTL_SLOTS` |
 | **Malformed policy TLV read as "no policy"** | Parse errors fail closed; only genuine absence credits |
 | **Unknown mode byte degrading a policy to AllowAll** | Mode bytes parsed at init; unknown values rejected |
-| **Held mistaken for credited by integrators** | Outcome byte in return data (`0` credited, `1` held) + log |
+| **Held mistaken for credited by integrators** | Per-instruction `msg!` log, plus an outcome byte in return data (`0` credited, `1` held) |
 | Undeclared extension coexistence | Any non-ReceivePolicy account extension → `failed` |
 | Missing metas → silent bypass | Fail-closed |
 | Global guard hotspot | Per-receiver shards |

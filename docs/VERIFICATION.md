@@ -98,7 +98,11 @@ Distinct `(receiver, mint)` shards use distinct writable guard PDAs (no shared g
 | Guard aliased as its own payout | `claim_authority` |
 | Zero-amount hold rejected | `guard_custody` |
 | Non-canonical instruction encodings rejected | `smoke` |
-| Client/program wire agreement | `wire_vectors` + `clients/js/src/index.test.ts` |
+| Client/program wire agreement (incl. variable-length allowlist) | `wire_vectors` + `clients/js/src/index.test.ts` |
+| Foreign account extension rejected (SPEC section 9) | `smoke` |
+| Error discriminants pinned to their numeric codes | `smoke` |
+| Held requires an initialized guard_state; credited does not | `guard_custody` |
+| Tokens donated straight into a guard are unattributed | `guard_custody` (pins a residual risk, not a defence) |
 
 Error codes are explicit and stable (`ReceiveTokenError` discriminants); retired variants
 leave documented gaps rather than renumbering live codes.

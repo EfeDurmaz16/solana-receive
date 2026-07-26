@@ -100,10 +100,13 @@ impl ReceivePolicy {
 
     /// Pure policy evaluation: `Ok(true)` if the transfer should be **credited**.
     pub fn accepts(&self, amount: u64, source_owner: &Pubkey) -> Result<bool, ProgramError> {
+        // Parse the mode first: short-circuiting on min_amount would let a policy carrying a
+        // corrupt mode byte take the below-minimum path without ever being rejected.
+        let mode = self.source_owner_mode()?;
         if amount < self.min_amount {
             return Ok(false);
         }
-        Ok(match self.source_owner_mode()? {
+        Ok(match mode {
             SourceOwnerMode::AllowAll => true,
             SourceOwnerMode::Allowlist => self.allowlist_slice().iter().any(|k| k == source_owner),
         })

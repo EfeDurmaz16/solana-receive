@@ -84,6 +84,37 @@ test("policy encoder rejects wrong-length keys and out-of-range modes", () => {
   // Out-of-range modes are rejected on-chain; fail before spending a transaction on them.
   assert.throws(() => encodeInitializeReceivePolicy({ ...base, sourceOwnerMode: 7 }));
   assert.throws(() => encodeInitializeReceivePolicy({ ...base, recoveryAuthorityMode: 9 }));
+  // Uint8Array.of coerces: -1 would become 255 and 1.5 would truncate to 1, i.e. a DIFFERENT
+  // valid mode. An upper-bound check alone would let both through.
+  assert.throws(() => encodeInitializeReceivePolicy({ ...base, sourceOwnerMode: -1 }));
+  assert.throws(() => encodeInitializeReceivePolicy({ ...base, sourceOwnerMode: 1.5 }));
+  assert.throws(() => encodeInitializeReceivePolicy({ ...base, recoveryAuthorityMode: NaN }));
+});
+
+test("allowlist wire vector pins the variable-length field", () => {
+  const a = new Uint8Array(32).fill(0x11);
+  const b = new Uint8Array(32).fill(0x22);
+  const got = encodeInitializeReceivePolicy({
+    minAmount: 0n,
+    sourceOwnerMode: 1,
+    recoveryAuthorityMode: 0,
+    recoveryAuthority: new Uint8Array(32),
+    receiptBondLamports: 0n,
+    receiptTtlSlots: 0n,
+    allowlist: [a, b],
+  });
+  assert.equal(
+    hex(got),
+    "02" +
+      "0000000000000000" +
+      "0100" +
+      "00".repeat(32) +
+      "0000000000000000" +
+      "0000000000000000" +
+      "02" + // allowlist_len
+      "11".repeat(32) +
+      "22".repeat(32),
+  );
 });
 
 test("transferCheckedAccounts marks signers and writables", () => {

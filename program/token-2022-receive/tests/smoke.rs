@@ -217,6 +217,38 @@ fn unpack_rejects_non_canonical_instruction_encodings() {
         );
     }
 
+    // The arms with real parsing: variable-length allowlist, optional freeze authority.
+    for ix in [
+        ReceiveTokenInstruction::InitializeAccount3 {
+            owner: Pubkey::new_unique(),
+        },
+        ReceiveTokenInstruction::InitializeMint2 {
+            decimals: 6,
+            mint_authority: Pubkey::new_unique(),
+            freeze_authority: Some(Pubkey::new_unique()),
+        },
+        ReceiveTokenInstruction::InitializeReceivePolicy {
+            min_amount: 1,
+            source_owner_mode: 1,
+            recovery_authority_mode: 2,
+            recovery_authority: Pubkey::new_unique(),
+            receipt_bond_lamports: 2,
+            receipt_ttl_slots: 3,
+            allowlist: vec![Pubkey::new_unique(), Pubkey::new_unique()],
+        },
+    ] {
+        let packed = ix.pack();
+        assert_eq!(ReceiveTokenInstruction::unpack(&packed).unwrap(), ix);
+        let mut extra = packed.clone();
+        extra.push(0);
+        assert!(
+            ReceiveTokenInstruction::unpack(&extra).is_err(),
+            "trailing byte accepted for {ix:?}"
+        );
+        // Truncation must not decode either.
+        assert!(ReceiveTokenInstruction::unpack(&packed[..packed.len() - 1]).is_err());
+    }
+
     // A freeze-authority flag pack can never emit must be rejected.
     let mut mint_ix = ReceiveTokenInstruction::InitializeMint2 {
         decimals: 6,
@@ -229,4 +261,68 @@ fn unpack_rejects_non_canonical_instruction_encodings() {
 
     assert!(ReceiveTokenInstruction::unpack(&[]).is_err());
     assert!(ReceiveTokenInstruction::unpack(&[99]).is_err());
+}
+
+#[test]
+fn foreign_extensions_are_rejected_alongside_a_receive_policy() {
+    // SPEC section 9 says ReceivePolicy does not coexist with other account extensions in v0.
+    // Before assert_no_other_extensions that was documentation only: the TLV walker skipped
+    // past anything it did not recognise.
+    use token_2022_receive::extension::tlv::assert_no_other_extensions;
+
+    let mut data = vec![0u8; account_len_with_receive_policy() + 8];
+    write_receive_policy_tlv(&mut data, &ReceivePolicy::default()).unwrap();
+    assert!(
+        assert_no_other_extensions(&data).is_ok(),
+        "policy alone is fine"
+    );
+
+    // Append a second, unknown extension after the policy entry.
+    let tail = account_len_with_receive_policy();
+    data[tail..tail + 2].copy_from_slice(&7u16.to_le_bytes()); // some other extension type
+    data[tail + 2..tail + 4].copy_from_slice(&0u16.to_le_bytes());
+    assert!(
+        assert_no_other_extensions(&data).is_err(),
+        "a trailing foreign extension must be rejected"
+    );
+
+    // A plain account carries no TLV region at all.
+    assert!(
+        assert_no_other_extensions(&vec![0u8; token_2022_receive::state::ACCOUNT_SIZE]).is_ok()
+    );
+}
+
+#[test]
+fn error_discriminants_are_stable() {
+    // These surface to clients as ProgramError::Custom(n) and are quoted in docs, so they must
+    // not move when a variant is retired. Retired slots 0, 5, 12 and 16 stay empty.
+    use token_2022_receive::error::ReceiveTokenError as E;
+    for (variant, code) in [
+        (E::InsufficientFunds, 1u32),
+        (E::MintMismatch, 2),
+        (E::AccountFrozen, 3),
+        (E::OwnerMismatch, 4),
+        (E::AlreadyInUse, 6),
+        (E::InvalidInstruction, 7),
+        (E::InvalidAccountData, 8),
+        (E::MintDecimalsMismatch, 9),
+        (E::MissingPolicyAccounts, 10),
+        (E::GuardAtCapacity, 11),
+        (E::PolicyNotEnabled, 13),
+        (E::InvalidReceipt, 14),
+        (E::ReceiptNotExpired, 15),
+        (E::UnauthorizedClaim, 17),
+        (E::AllowlistTooLarge, 18),
+        (E::Overflow, 19),
+        (E::InvalidPda, 20),
+        (E::InvalidBondDestination, 21),
+        (E::UnsupportedExtension, 22),
+        (E::GuardNotTransferable, 23),
+        (E::SelfTransferForbidden, 24),
+        (E::InvalidPolicyMode, 25),
+        (E::PolicyBondTooLarge, 26),
+        (E::PolicyTtlTooLarge, 27),
+    ] {
+        assert_eq!(variant.clone() as u32, code, "{variant:?} moved");
+    }
 }

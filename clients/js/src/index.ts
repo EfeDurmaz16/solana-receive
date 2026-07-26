@@ -71,6 +71,19 @@ function requirePubkey(bytes: Uint8Array, label: string): Uint8Array {
   return bytes;
 }
 
+/**
+ * Single-byte fields must be validated on both sides.
+ *
+ * `Uint8Array.of` applies ToUint8: -1 becomes 255 and 1.5 truncates to 1, so an upper-bound
+ * check alone lets a wrong value through as a different, valid on-chain mode.
+ */
+function requireByte(value: number, max: number, label: string): number {
+  if (!Number.isInteger(value) || value < 0 || value > max) {
+    throw new RangeError(`${label} must be an integer in [0, ${max}], got ${value}`);
+  }
+  return value;
+}
+
 export function encodeTransferChecked(params: {
   amount: bigint | number;
   decimals: number;
@@ -82,7 +95,7 @@ export function encodeTransferChecked(params: {
   const out = new Uint8Array(1 + 8 + 1 + 32);
   out[0] = Ix.TransferChecked;
   out.set(encodeU64LE(params.amount), 1);
-  out[9] = params.decimals;
+  out[9] = requireByte(params.decimals, 255, "decimals");
   out.set(params.uniqueNonce, 10);
   return out;
 }
@@ -99,18 +112,13 @@ export function encodeInitializeReceivePolicy(params: {
   if (params.allowlist.length > ALLOWLIST_CAP) {
     throw new Error(`allowlist exceeds cap ${ALLOWLIST_CAP}`);
   }
-  if (params.sourceOwnerMode > 1) {
-    throw new RangeError(`sourceOwnerMode must be 0 or 1, got ${params.sourceOwnerMode}`);
-  }
-  if (params.recoveryAuthorityMode > 2) {
-    throw new RangeError(
-      `recoveryAuthorityMode must be 0, 1 or 2, got ${params.recoveryAuthorityMode}`,
-    );
-  }
   const parts: Uint8Array[] = [
     Uint8Array.of(Ix.InitializeReceivePolicy),
     encodeU64LE(params.minAmount),
-    Uint8Array.of(params.sourceOwnerMode, params.recoveryAuthorityMode),
+    Uint8Array.of(
+      requireByte(params.sourceOwnerMode, 1, "sourceOwnerMode"),
+      requireByte(params.recoveryAuthorityMode, 2, "recoveryAuthorityMode"),
+    ),
     requirePubkey(params.recoveryAuthority, "recoveryAuthority"),
     encodeU64LE(params.receiptBondLamports),
     encodeU64LE(params.receiptTtlSlots),

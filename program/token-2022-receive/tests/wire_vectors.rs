@@ -52,6 +52,38 @@ fn initialize_receive_policy_wire_vector() {
     );
 }
 
+/// The one variable-length field: without this the shared contract only pins the empty case.
+#[test]
+fn initialize_receive_policy_allowlist_wire_vector() {
+    let packed = ReceiveTokenInstruction::InitializeReceivePolicy {
+        min_amount: 0,
+        source_owner_mode: 1,
+        recovery_authority_mode: 0,
+        recovery_authority: solana_program::pubkey::Pubkey::new_from_array([0; 32]),
+        receipt_bond_lamports: 0,
+        receipt_ttl_slots: 0,
+        allowlist: vec![
+            solana_program::pubkey::Pubkey::new_from_array([0x11; 32]),
+            solana_program::pubkey::Pubkey::new_from_array([0x22; 32]),
+        ],
+    }
+    .pack();
+    assert_eq!(
+        hex(&packed),
+        format!(
+            "02{}{}{}{}{}{}{}{}",
+            "0000000000000000", // min_amount
+            "0100",             // modes
+            "00".repeat(32),    // recovery_authority
+            "0000000000000000", // bond
+            "0000000000000000", // ttl
+            "02",               // allowlist_len
+            "11".repeat(32),
+            "22".repeat(32),
+        )
+    );
+}
+
 #[test]
 fn tag_only_instructions_are_single_bytes() {
     assert_eq!(ReceiveTokenInstruction::EnsureGuard.pack(), vec![3]);
