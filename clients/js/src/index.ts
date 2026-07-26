@@ -1,7 +1,25 @@
 /**
- * Minimal Kit-oriented helpers for the token-2022-receive reference program.
- * Not a full SDK — enough to derive PDAs and encode TransferChecked for local exercise.
+ * Client for the token-2022-receive reference program.
+ *
+ * Prefer Codama-generated Kit builders (`./generated`, re-exported below). Residual helpers
+ * cover preflight (`previewOutcome`), policy TLV decode, HeldLimits presets, and thin
+ * validated wrappers that refuse bad inputs before they hit the wire.
  */
+
+import {
+  getAddressDecoder,
+  type Address,
+} from "@solana/kit";
+import {
+  getClaimReceiptInstructionDataEncoder,
+  getCloseExpiredReceiptInstructionDataEncoder,
+  getEnsureGuardInstructionDataEncoder,
+  getInitializeReceivePolicyInstructionDataEncoder,
+  getTransferCheckedInstructionDataEncoder,
+} from "./generated/instructions/index.ts";
+
+/** Codama-generated Kit builders, PDAs, and typed errors. */
+export * from "./generated/index.ts";
 
 export {
   PROGRAM_ID,
@@ -15,7 +33,11 @@ export {
   receiptSeeds,
 } from "./constants.ts";
 
-import { ALLOWLIST_CAP } from "./constants.ts";
+import {
+  ALLOWLIST_CAP,
+  MAX_RECEIPT_BOND_LAMPORTS,
+  MAX_RECEIPT_TTL_SLOTS,
+} from "./constants.ts";
 
 export {
   deriveGuardTokenAddress,
@@ -24,12 +46,7 @@ export {
 } from "./pda.ts";
 export type { AddressApi } from "./pda.ts";
 
-/**
- * Instruction tags - keep in sync with Rust `ReceiveTokenInstruction`.
- *
- * A const object rather than a TS `enum`: enums emit runtime code, so they are not erasable
- * and cannot be run by type-stripping runtimes (node --experimental-strip-types, bun, tsx).
- */
+/** Instruction tags — same values as generated `*_DISCRIMINATOR` constants. */
 export const Ix = {
   InitializeMint2: 0,
   InitializeAccount3: 1,
@@ -49,25 +66,16 @@ export type PolicyTransferAccounts = {
   bondPayer: string;
 };
 
-const U64_MAX = (1n << 64n) - 1n;
-
-export function encodeU64LE(n: bigint | number): Uint8Array {
-  const v = BigInt(n);
-  if (v < 0n || v > U64_MAX) {
-    throw new RangeError(`value out of u64 range: ${v}`);
-  }
-  const out = new Uint8Array(8);
-  const view = new DataView(out.buffer);
-  view.setBigUint64(0, v, true);
-  return out;
-}
-
 /** Pubkeys are fixed-width on the wire; a short one shifts every field after it. */
 function requirePubkey(bytes: Uint8Array, label: string): Uint8Array {
   if (bytes.length !== 32) {
     throw new Error(`${label} must be 32 bytes, got ${bytes.length}`);
   }
   return bytes;
+}
+
+function addressFromBytes(bytes: Uint8Array, label: string): Address {
+  return getAddressDecoder().decode(requirePubkey(bytes, label));
 }
 
 /**
@@ -118,6 +126,10 @@ export const ORIGINATOR_RECOVERY_ONLY: HeldLimits = {
   maxRecoveryMode: 0,
 };
 
+/**
+ * Pack TransferChecked data via the Codama encoder, after refusing inputs that would
+ * silently coerce on the wire.
+ */
 export function encodeTransferChecked(params: {
   amount: bigint | number;
   decimals: number;
@@ -132,17 +144,21 @@ export function encodeTransferChecked(params: {
   if (params.uniqueNonce.length !== 32) {
     throw new Error("uniqueNonce must be 32 bytes");
   }
-  const out = new Uint8Array(1 + 8 + 1 + 32 + 8 + 8 + 1);
-  out[0] = Ix.TransferChecked;
-  out.set(encodeU64LE(params.amount), 1);
-  out[9] = requireByte(params.decimals, 255, "decimals");
-  out.set(params.uniqueNonce, 10);
-  out.set(encodeU64LE(params.limits.maxBondLamports), 42);
-  out.set(encodeU64LE(params.limits.maxTtlSlots), 50);
-  out[58] = requireByte(params.limits.maxRecoveryMode, 2, "maxRecoveryMode");
-  return out;
+  return new Uint8Array(
+    getTransferCheckedInstructionDataEncoder().encode({
+      amount: params.amount,
+      decimals: requireByte(params.decimals, 255, "decimals"),
+      uniqueNonce: Array.from(params.uniqueNonce),
+      maxBondLamports: params.limits.maxBondLamports,
+      maxTtlSlots: params.limits.maxTtlSlots,
+      maxRecoveryMode: requireByte(params.limits.maxRecoveryMode, 2, "maxRecoveryMode"),
+    }),
+  );
 }
 
+/**
+ * Pack InitializeReceivePolicy via the Codama encoder, after refusing bad modes / key lengths.
+ */
 export function encodeInitializeReceivePolicy(params: {
   minAmount: bigint | number;
   sourceOwnerMode: number;
@@ -155,27 +171,34 @@ export function encodeInitializeReceivePolicy(params: {
   if (params.allowlist.length > ALLOWLIST_CAP) {
     throw new Error(`allowlist exceeds cap ${ALLOWLIST_CAP}`);
   }
-  const parts: Uint8Array[] = [
-    Uint8Array.of(Ix.InitializeReceivePolicy),
-    encodeU64LE(params.minAmount),
-    Uint8Array.of(
-      requireByte(params.sourceOwnerMode, 1, "sourceOwnerMode"),
-      requireByte(params.recoveryAuthorityMode, 2, "recoveryAuthorityMode"),
-    ),
-    requirePubkey(params.recoveryAuthority, "recoveryAuthority"),
-    encodeU64LE(params.receiptBondLamports),
-    encodeU64LE(params.receiptTtlSlots),
-    Uint8Array.of(params.allowlist.length),
-    ...params.allowlist.map((k, i) => requirePubkey(k, `allowlist[${i}]`)),
-  ];
-  const len = parts.reduce((n, p) => n + p.length, 0);
-  const out = new Uint8Array(len);
-  let o = 0;
-  for (const p of parts) {
-    out.set(p, o);
-    o += p.length;
-  }
-  return out;
+  return new Uint8Array(
+    getInitializeReceivePolicyInstructionDataEncoder().encode({
+      minAmount: params.minAmount,
+      sourceOwnerMode: requireByte(params.sourceOwnerMode, 1, "sourceOwnerMode"),
+      recoveryAuthorityMode: requireByte(
+        params.recoveryAuthorityMode,
+        2,
+        "recoveryAuthorityMode",
+      ),
+      recoveryAuthority: addressFromBytes(params.recoveryAuthority, "recoveryAuthority"),
+      receiptBondLamports: params.receiptBondLamports,
+      receiptTtlSlots: params.receiptTtlSlots,
+      allowlist: params.allowlist.map((k, i) => addressFromBytes(k, `allowlist[${i}]`)),
+    }),
+  );
+}
+
+/** Empty-body instructions: tag byte only (generated encoder). */
+export function encodeEnsureGuard(): Uint8Array {
+  return new Uint8Array(getEnsureGuardInstructionDataEncoder().encode({}));
+}
+
+export function encodeClaimReceipt(): Uint8Array {
+  return new Uint8Array(getClaimReceiptInstructionDataEncoder().encode({}));
+}
+
+export function encodeCloseExpiredReceipt(): Uint8Array {
+  return new Uint8Array(getCloseExpiredReceiptInstructionDataEncoder().encode({}));
 }
 
 /** Outcome reported as instruction return data. `held` still succeeds. */
@@ -190,6 +213,8 @@ export type TransferOutcome = (typeof TransferOutcome)[keyof typeof TransferOutc
  *
  * A held transfer succeeds, so checking only that the transaction landed reads a diverted
  * payment as a delivered one. Returns `null` when no return data is present.
+ *
+ * Multi-ix transactions: return data is last-instruction scoped; also index the held log.
  */
 export function decodeTransferOutcome(
   returnData: Uint8Array | null | undefined,
@@ -288,15 +313,8 @@ export type PreviewedOutcome = "credited" | "held" | "failed";
  *
  * Lets a sender decide before paying instead of discovering it from a failed transaction or,
  * worse, a successful one that held the funds. Mirrors the on-chain order of checks, including
- * the two that a naive preview gets wrong:
- *
- * - the bond is `max(policy.receiptBondLamports, rent(RECEIPT_SIZE))`, so a sender ceiling below
- *   the rent floor refuses a hold even when the policy asks for nothing;
- * - a zero-amount hold is rejected outright.
- *
- * `rentExemptReceiptLamports` is required, from `getMinimumBalanceForRentExemption(RECEIPT_SIZE)`.
- * It is not optional because a default of zero silently reproduces the un-floored preview this
- * argument exists to prevent.
+ * the rent floor and the zero-amount hold reject. Pass
+ * `getMinimumBalanceForRentExemption(RECEIPT_SIZE)` as `rentExemptReceiptLamports`.
  */
 export function previewOutcome(params: {
   policy: ReceivePolicy | null;
@@ -317,8 +335,17 @@ export function previewOutcome(params: {
       policy.allowlist.some((k) => sameKey(k, params.sourceOwner)));
   if (accepts) return "credited";
 
-  // From here the policy rejects, so the outcome is either a hold or a failure.
   if (amount === 0n) return "failed";
+
+  // The held path re-checks the protocol caps at point of use, because the policy is a TLV blob
+  // with no version of its own and could carry a value written before the caps existed. A
+  // preview that only compares sender limits would say `held` where the chain fails.
+  if (
+    policy.receiptBondLamports > MAX_RECEIPT_BOND_LAMPORTS ||
+    policy.receiptTtlSlots > MAX_RECEIPT_TTL_SLOTS
+  ) {
+    return "failed";
+  }
 
   const rentFloor = BigInt(params.rentExemptReceiptLamports);
   const bond =
@@ -342,9 +369,8 @@ export type AccountRole = {
 /**
  * Account metas for TransferChecked, with roles.
  *
- * Roles are not cosmetic: `bond_payer` must be a writable signer and five other accounts must
- * be writable, and a caller that guessed wrong would get an opaque runtime failure.
- * Pass `policy` only when the destination has ReceivePolicy enabled.
+ * Prefer `getTransferCheckedInstruction` from the generated client when you already have Kit
+ * signers; this helper is for callers that only need the role list (e.g. offline assembly).
  */
 export function transferCheckedAccounts(params: {
   source: string;

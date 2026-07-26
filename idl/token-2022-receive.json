@@ -1,0 +1,1116 @@
+{
+  "kind": "rootNode",
+  "standard": "codama",
+  "version": "1.0.0",
+  "program": {
+    "kind": "programNode",
+    "name": "token2022Receive",
+    "prefix": "recv",
+    "publicKey": "GyrTVV4hbcuzJuSz86FNq7K2UVAoSJQtcgHTVTz1hPPq",
+    "version": "0.1.0",
+    "origin": "shank",
+    "docs": [
+      "Token-2022-shaped reference program with destination ReceivePolicy and non-reverting held delivery.",
+      "Custom program ID. Not wire-compatible with TokenzQd. Not Tokenkeg USDC interception."
+    ],
+    "accounts": [],
+    "definedTypes": [],
+    "pdas": [
+      {
+        "kind": "pdaNode",
+        "name": "guardToken",
+        "docs": [
+          "Receiver-scoped guard vault PDA."
+        ],
+        "seeds": [
+          {
+            "kind": "constantPdaSeedNode",
+            "type": {
+              "kind": "bytesTypeNode"
+            },
+            "value": {
+              "kind": "bytesValueNode",
+              "data": "guard",
+              "encoding": "utf8"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "receiver",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "mint",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "pdaNode",
+        "name": "guardState",
+        "docs": [
+          "Companion accounting PDA for a guard shard."
+        ],
+        "seeds": [
+          {
+            "kind": "constantPdaSeedNode",
+            "type": {
+              "kind": "bytesTypeNode"
+            },
+            "value": {
+              "kind": "bytesValueNode",
+              "data": "guard-state",
+              "encoding": "utf8"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "receiver",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "mint",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "pdaNode",
+        "name": "receipt",
+        "docs": [
+          "Held-delivery receipt PDA."
+        ],
+        "seeds": [
+          {
+            "kind": "constantPdaSeedNode",
+            "type": {
+              "kind": "bytesTypeNode"
+            },
+            "value": {
+              "kind": "bytesValueNode",
+              "data": "receipt",
+              "encoding": "utf8"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "receiver",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "mint",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "sourceOwner",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "uniqueNonce",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 32,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "instructions": [
+      {
+        "kind": "instructionNode",
+        "name": "initializeMint2",
+        "docs": [
+          "Minimal Token-shaped mint init."
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ],
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "mint",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 0
+            },
+            "defaultValueStrategy": "omitted"
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "decimals",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "mintAuthority",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "freezeAuthority",
+            "type": {
+              "kind": "optionTypeNode",
+              "item": {
+                "kind": "publicKeyTypeNode"
+              },
+              "prefix": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "fixed": false
+            },
+            "docs": [
+              "u8 tag 0 = none, 1 = Pubkey (not SPL COption-u32)."
+            ]
+          }
+        ],
+        "optionalAccountStrategy": "programId"
+      },
+      {
+        "kind": "instructionNode",
+        "name": "initializeAccount3",
+        "docs": [
+          "Minimal Token-shaped token account init."
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ],
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "account",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "mint",
+            "isWritable": false,
+            "isSigner": false,
+            "isOptional": false
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 1
+            },
+            "defaultValueStrategy": "omitted"
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "owner",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          }
+        ],
+        "optionalAccountStrategy": "programId"
+      },
+      {
+        "kind": "instructionNode",
+        "name": "initializeReceivePolicy",
+        "docs": [
+          "Write-once ReceivePolicy TLV on a destination token account.",
+          "Owner must sign. Modes and bond/TTL are validated against protocol caps."
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ],
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "tokenAccount",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "owner",
+            "isWritable": false,
+            "isSigner": true,
+            "isOptional": false
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 2
+            },
+            "defaultValueStrategy": "omitted"
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "minAmount",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "sourceOwnerMode",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "docs": [
+              "0 AllowAll, 1 Allowlist"
+            ]
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "recoveryAuthorityMode",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "docs": [
+              "0 Originator, 1 Receiver, 2 ThirdParty"
+            ]
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "recoveryAuthority",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "receiptBondLamports",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "receiptTtlSlots",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "allowlist",
+            "type": {
+              "kind": "arrayTypeNode",
+              "item": {
+                "kind": "publicKeyTypeNode"
+              },
+              "count": {
+                "kind": "prefixedCountNode",
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u8",
+                  "endian": "le"
+                }
+              }
+            }
+          }
+        ],
+        "optionalAccountStrategy": "programId"
+      },
+      {
+        "kind": "instructionNode",
+        "name": "ensureGuard",
+        "docs": [
+          "Create or repair the (receiver, mint) guard vault + companion state.",
+          "Refuses unreadable GuardState layouts (no migration)."
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ],
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "payer",
+            "isWritable": true,
+            "isSigner": true,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "receiver",
+            "isWritable": false,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "mint",
+            "isWritable": false,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "guardToken",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "guardState",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "systemProgram",
+            "isWritable": false,
+            "isSigner": false,
+            "isOptional": false,
+            "defaultValue": {
+              "kind": "publicKeyValueNode",
+              "publicKey": "11111111111111111111111111111111"
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 3
+            },
+            "defaultValueStrategy": "omitted"
+          }
+        ],
+        "optionalAccountStrategy": "programId"
+      },
+      {
+        "kind": "instructionNode",
+        "name": "transferChecked",
+        "docs": [
+          "TransferChecked with optional held delivery.",
+          "No-policy / self-transfer: pass only the first four accounts.",
+          "Policy destination: also pass guardToken, guardState, receipt, bondPayer, systemProgram."
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ],
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "source",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "mint",
+            "isWritable": false,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "destination",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "authority",
+            "isWritable": false,
+            "isSigner": true,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "guardToken",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": true,
+            "docs": [
+              "Required when destination has ReceivePolicy (non-self)."
+            ]
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "guardState",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": true
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "receipt",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": true
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "bondPayer",
+            "isWritable": true,
+            "isSigner": true,
+            "isOptional": true
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "systemProgram",
+            "isWritable": false,
+            "isSigner": false,
+            "isOptional": true
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 4
+            },
+            "defaultValueStrategy": "omitted"
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "amount",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "decimals",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "uniqueNonce",
+            "type": {
+              "kind": "arrayTypeNode",
+              "item": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "count": {
+                "kind": "fixedCountNode",
+                "value": 32
+              }
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "maxBondLamports",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "maxTtlSlots",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "maxRecoveryMode",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            }
+          }
+        ],
+        "optionalAccountStrategy": "omitted"
+      },
+      {
+        "kind": "instructionNode",
+        "name": "claimReceipt",
+        "docs": [
+          "Full-claim held receipt to claimDestination; refund bond to bondDest."
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ],
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "receipt",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "guardToken",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "guardState",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "claimDestination",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "mint",
+            "isWritable": false,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "claimAuthority",
+            "isWritable": false,
+            "isSigner": true,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "bondDest",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false,
+            "docs": [
+              "Must equal the receipt's recorded bond_payer."
+            ]
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 5
+            },
+            "defaultValueStrategy": "omitted"
+          }
+        ],
+        "optionalAccountStrategy": "programId"
+      },
+      {
+        "kind": "instructionNode",
+        "name": "closeExpiredReceipt",
+        "docs": [
+          "Permissionless close after TTL: return tokens to sourceOwnerToken; refund bond to bondDest."
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ],
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "receipt",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "guardToken",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "guardState",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "sourceOwnerToken",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "mint",
+            "isWritable": false,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "bondDest",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 6
+            },
+            "defaultValueStrategy": "omitted"
+          }
+        ],
+        "optionalAccountStrategy": "programId"
+      },
+      {
+        "kind": "instructionNode",
+        "name": "mintTo",
+        "docs": [
+          "Mint tokens into a non-guard token account."
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ],
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "mint",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "account",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "mintAuthority",
+            "isWritable": false,
+            "isSigner": true,
+            "isOptional": false
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 7
+            },
+            "defaultValueStrategy": "omitted"
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "amount",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          }
+        ],
+        "optionalAccountStrategy": "programId"
+      }
+    ],
+    "errors": [
+      {
+        "kind": "errorNode",
+        "name": "insufficientFunds",
+        "code": 1,
+        "message": "Insufficient funds",
+        "docs": [
+          "InsufficientFunds"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "mintMismatch",
+        "code": 2,
+        "message": "Mint mismatch",
+        "docs": [
+          "MintMismatch"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "accountFrozen",
+        "code": 3,
+        "message": "Account frozen",
+        "docs": [
+          "AccountFrozen"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "ownerMismatch",
+        "code": 4,
+        "message": "Owner does not match",
+        "docs": [
+          "OwnerMismatch"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "alreadyInUse",
+        "code": 6,
+        "message": "Already in use",
+        "docs": [
+          "AlreadyInUse"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "invalidInstruction",
+        "code": 7,
+        "message": "Invalid instruction data",
+        "docs": [
+          "InvalidInstruction"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "invalidAccountData",
+        "code": 8,
+        "message": "Invalid account data",
+        "docs": [
+          "InvalidAccountData"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "mintDecimalsMismatch",
+        "code": 9,
+        "message": "Decimals mismatch",
+        "docs": [
+          "MintDecimalsMismatch"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "missingPolicyAccounts",
+        "code": 10,
+        "message": "Missing required receive-policy accounts",
+        "docs": [
+          "MissingPolicyAccounts"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "policyNotEnabled",
+        "code": 13,
+        "message": "Receive policy not enabled on destination",
+        "docs": [
+          "PolicyNotEnabled"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "invalidReceipt",
+        "code": 14,
+        "message": "Receipt not found or invalid",
+        "docs": [
+          "InvalidReceipt"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "receiptNotExpired",
+        "code": 15,
+        "message": "Receipt not expired",
+        "docs": [
+          "ReceiptNotExpired"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "unauthorizedClaim",
+        "code": 17,
+        "message": "Unauthorized recovery / claim",
+        "docs": [
+          "UnauthorizedClaim"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "allowlistTooLarge",
+        "code": 18,
+        "message": "Allowlist exceeds fixed cap",
+        "docs": [
+          "AllowlistTooLarge"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "overflow",
+        "code": 19,
+        "message": "Overflow",
+        "docs": [
+          "Overflow"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "invalidPda",
+        "code": 20,
+        "message": "Invalid PDA",
+        "docs": [
+          "InvalidPda"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "invalidBondDestination",
+        "code": 21,
+        "message": "Bond destination must be the recorded bond payer",
+        "docs": [
+          "InvalidBondDestination"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "unsupportedExtension",
+        "code": 22,
+        "message": "Receive policy cannot coexist with other account extensions in v0",
+        "docs": [
+          "UnsupportedExtension"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "guardNotTransferable",
+        "code": 23,
+        "message": "Guard custody is not transferable outside claim / expiry",
+        "docs": [
+          "GuardNotTransferable"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "selfTransferForbidden",
+        "code": 24,
+        "message": "Source and destination must differ",
+        "docs": [
+          "SelfTransferForbidden"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "invalidPolicyMode",
+        "code": 25,
+        "message": "Unrecognized receive-policy mode byte",
+        "docs": [
+          "InvalidPolicyMode"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "policyBondTooLarge",
+        "code": 26,
+        "message": "Receipt bond exceeds the protocol maximum",
+        "docs": [
+          "PolicyBondTooLarge"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "policyTtlTooLarge",
+        "code": 27,
+        "message": "Receipt TTL exceeds the protocol maximum",
+        "docs": [
+          "PolicyTtlTooLarge"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "guardUnderfunded",
+        "code": 28,
+        "message": "Guard vault does not cover its open receipts",
+        "docs": [
+          "GuardUnderfunded"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "bondAboveSenderLimit",
+        "code": 29,
+        "message": "Receipt bond exceeds the sender's declared maximum",
+        "docs": [
+          "BondAboveSenderLimit"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "ttlAboveSenderLimit",
+        "code": 30,
+        "message": "Receipt TTL exceeds the sender's declared maximum",
+        "docs": [
+          "TtlAboveSenderLimit"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "recoveryModeAboveSenderLimit",
+        "code": 31,
+        "message": "Recovery mode gives away more custody than the sender allowed",
+        "docs": [
+          "RecoveryModeAboveSenderLimit"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "unsupportedStateVersion",
+        "code": 32,
+        "message": "Account layout version is not supported by this program",
+        "docs": [
+          "UnsupportedStateVersion"
+        ]
+      }
+    ]
+  },
+  "additionalPrograms": []
+}

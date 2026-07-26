@@ -1,12 +1,10 @@
 /**
- * Cross-language wire contract.
+ * Cross-language wire contract + residual helpers.
  *
- * These byte vectors are asserted identically by the Rust side in
- * `program/token-2022-receive/tests/wire_vectors.rs`. If the two encoders ever disagree the
- * client silently builds instructions the program misreads, so both suites must be updated
- * together and neither may be changed alone.
+ * Byte vectors match `program/token-2022-receive/tests/wire_vectors.rs`. Encoders pack via
+ * Codama; residual wrappers only add fail-closed input checks.
  *
- *   node --experimental-strip-types --test src/index.test.ts
+ *   npm test
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -20,22 +18,23 @@ import {
   decodeTransferOutcome,
   encodeInitializeReceivePolicy,
   encodeTransferChecked,
-  encodeU64LE,
+  encodeEnsureGuard,
+  encodeClaimReceipt,
+  encodeCloseExpiredReceipt,
   transferCheckedAccounts,
   TransferOutcome,
+  Ix,
+  CLAIM_RECEIPT_DISCRIMINATOR,
+  CLOSE_EXPIRED_RECEIPT_DISCRIMINATOR,
+  ENSURE_GUARD_DISCRIMINATOR,
+  TRANSFER_CHECKED_DISCRIMINATOR,
+  INITIALIZE_RECEIVE_POLICY_DISCRIMINATOR,
 } from "./index.ts";
 
 const hex = (b: Uint8Array) =>
   Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
 
-test("encodeU64LE rejects values outside u64", () => {
-  assert.equal(hex(encodeU64LE(1)), "0100000000000000");
-  assert.equal(hex(encodeU64LE(2n ** 64n - 1n)), "ffffffffffffffff");
-  assert.throws(() => encodeU64LE(-1));
-  assert.throws(() => encodeU64LE(2n ** 64n));
-});
-
-test("TransferChecked wire vector", () => {
+test("TransferChecked wire vector (Codama-backed)", () => {
   const nonce = new Uint8Array(32).fill(9);
   const got = encodeTransferChecked({
     amount: 1n,
@@ -44,18 +43,19 @@ test("TransferChecked wire vector", () => {
     limits: UNLIMITED_HELD_LIMITS,
   });
   assert.equal(got.length, 59);
+  assert.equal(got[0], TRANSFER_CHECKED_DISCRIMINATOR);
+  assert.equal(got[0], Ix.TransferChecked);
   assert.equal(
     hex(got),
     "04" +
-      "0100000000000000" + // amount
-      "06" + // decimals
-      "09".repeat(32) + // uniqueNonce
-      "ffffffffffffffff" + // maxBondLamports
-      "ffffffffffffffff" + // maxTtlSlots
-      "02", // maxRecoveryMode: ThirdParty, i.e. accept any
+      "0100000000000000" +
+      "06" +
+      "09".repeat(32) +
+      "ffffffffffffffff" +
+      "ffffffffffffffff" +
+      "02",
   );
 
-  // Refusing held delivery outright.
   const refused = encodeTransferChecked({
     amount: 1n,
     decimals: 6,
@@ -71,7 +71,6 @@ test("TransferChecked wire vector", () => {
       limits: UNLIMITED_HELD_LIMITS,
     }),
   );
-  // Out-of-range recovery ceiling must fail before a transaction is paid for.
   assert.throws(() =>
     encodeTransferChecked({
       amount: 1n,
@@ -82,7 +81,7 @@ test("TransferChecked wire vector", () => {
   );
 });
 
-test("InitializeReceivePolicy wire vector", () => {
+test("InitializeReceivePolicy wire vector (Codama-backed)", () => {
   const authority = new Uint8Array(32).fill(0xab);
   const got = encodeInitializeReceivePolicy({
     minAmount: 100n,
@@ -93,15 +92,16 @@ test("InitializeReceivePolicy wire vector", () => {
     receiptTtlSlots: 1_512_000n,
     allowlist: [],
   });
+  assert.equal(got[0], INITIALIZE_RECEIVE_POLICY_DISCRIMINATOR);
   assert.equal(
     hex(got),
     "02" +
-      "6400000000000000" + // min_amount
-      "0102" + // source_owner_mode, recovery_authority_mode
+      "6400000000000000" +
+      "0102" +
       "ab".repeat(32) +
-      "0000000000000000" + // bond
-      "4012170000000000" + // ttl 1_512_000 = 0x171240, little endian
-      "00", // allowlist_len
+      "0000000000000000" +
+      "4012170000000000" +
+      "00",
   );
 });
 
@@ -117,14 +117,10 @@ test("policy encoder rejects wrong-length keys and out-of-range modes", () => {
     receiptTtlSlots: 0n,
     allowlist: [] as Uint8Array[],
   };
-  // A short key would shift every following field, silently corrupting bond and TTL.
   assert.throws(() => encodeInitializeReceivePolicy({ ...base, recoveryAuthority: short }));
   assert.throws(() => encodeInitializeReceivePolicy({ ...base, allowlist: [short] }));
-  // Out-of-range modes are rejected on-chain; fail before spending a transaction on them.
   assert.throws(() => encodeInitializeReceivePolicy({ ...base, sourceOwnerMode: 7 }));
   assert.throws(() => encodeInitializeReceivePolicy({ ...base, recoveryAuthorityMode: 9 }));
-  // Uint8Array.of coerces: -1 would become 255 and 1.5 would truncate to 1, i.e. a DIFFERENT
-  // valid mode. An upper-bound check alone would let both through.
   assert.throws(() => encodeInitializeReceivePolicy({ ...base, sourceOwnerMode: -1 }));
   assert.throws(() => encodeInitializeReceivePolicy({ ...base, sourceOwnerMode: 1.5 }));
   assert.throws(() => encodeInitializeReceivePolicy({ ...base, recoveryAuthorityMode: NaN }));
@@ -150,10 +146,22 @@ test("allowlist wire vector pins the variable-length field", () => {
       "00".repeat(32) +
       "0000000000000000" +
       "0000000000000000" +
-      "02" + // allowlist_len
+      "02" +
       "11".repeat(32) +
       "22".repeat(32),
   );
+});
+
+test("empty-body lifecycle instructions are a single tag byte", () => {
+  assert.deepEqual(encodeEnsureGuard(), Uint8Array.of(ENSURE_GUARD_DISCRIMINATOR));
+  assert.deepEqual(encodeClaimReceipt(), Uint8Array.of(CLAIM_RECEIPT_DISCRIMINATOR));
+  assert.deepEqual(
+    encodeCloseExpiredReceipt(),
+    Uint8Array.of(CLOSE_EXPIRED_RECEIPT_DISCRIMINATOR),
+  );
+  assert.equal(ENSURE_GUARD_DISCRIMINATOR, Ix.EnsureGuard);
+  assert.equal(CLAIM_RECEIPT_DISCRIMINATOR, Ix.ClaimReceipt);
+  assert.equal(CLOSE_EXPIRED_RECEIPT_DISCRIMINATOR, Ix.CloseExpiredReceipt);
 });
 
 test("transferCheckedAccounts marks signers and writables", () => {
@@ -190,7 +198,6 @@ test("PDA seed builders reject wrong-length keys", async () => {
   const { guardTokenSeeds, guardStateSeeds, receiptSeeds } = await import("./constants.ts");
   const ok = new Uint8Array(32);
   const short = new Uint8Array(31);
-  // A wrong-length seed derives a different address in silence, which is worse than throwing.
   assert.throws(() => guardTokenSeeds(short, ok));
   assert.throws(() => guardTokenSeeds(ok, short));
   assert.throws(() => guardStateSeeds(short, ok));
@@ -201,27 +208,24 @@ test("PDA seed builders reject wrong-length keys", async () => {
 });
 
 test("ReceivePolicy account layout vector, shared with wire_vectors.rs", () => {
-  // Same bytes the Rust suite asserts. A sender needs the destination's terms to choose sensible
-  // HeldLimits, and the policy is write-once, so what this reads cannot change under an
-  // in-flight payment.
   const data = new Uint8Array(498);
   const put = (offset: number, h: string) => {
     for (let i = 0; i < h.length / 2; i++) data[offset + i] = parseInt(h.slice(i * 2, i * 2 + 2), 16);
   };
   put(
     165,
-    "02" + // ACCOUNT_TYPE_ACCOUNT
-      "1027" + // extension type 10_000
-      "4801" + // declared length 328
-      "6400000000000000" + // minAmount 100
-      "01" + // sourceOwnerMode Allowlist
-      "01" + // recoveryAuthorityMode Receiver
+    "02" +
+      "1027" +
+      "4801" +
+      "6400000000000000" +
+      "01" +
+      "01" +
       "000000000000" +
-      "ab".repeat(32) + // recoveryAuthority
-      "0700000000000000" + // receiptBondLamports 7
-      "4012170000000000", // receiptTtlSlots 1_512_000
+      "ab".repeat(32) +
+      "0700000000000000" +
+      "4012170000000000",
   );
-  data[234] = 1; // allowlistLen
+  data[234] = 1;
   put(242, "11".repeat(32));
 
   const policy = decodeReceivePolicy(data);
@@ -235,10 +239,9 @@ test("ReceivePolicy account layout vector, shared with wire_vectors.rs", () => {
   assert.equal(policy.allowlist.length, 1);
   assert.equal(hex(policy.allowlist[0]!), "11".repeat(32));
 
-  // A plain token account carries no policy; a corrupt one must throw rather than read as none.
   assert.equal(decodeReceivePolicy(new Uint8Array(165)), null);
   const corrupt = data.slice();
-  corrupt[168] = 4; // declared length no longer matches the struct
+  corrupt[168] = 4;
   assert.throws(() => decodeReceivePolicy(corrupt));
 });
 
@@ -247,8 +250,8 @@ test("previewOutcome tells a sender what will happen before paying", () => {
   const stranger = new Uint8Array(32).fill(0x22);
   const policy = {
     minAmount: 100n,
-    sourceOwnerMode: 1, // Allowlist
-    recoveryAuthorityMode: 1, // Receiver claims what it rejects
+    sourceOwnerMode: 1,
+    recoveryAuthorityMode: 1,
     recoveryAuthority: new Uint8Array(32),
     receiptBondLamports: 7n,
     receiptTtlSlots: 1_512_000n,
@@ -265,14 +268,11 @@ test("previewOutcome tells a sender what will happen before paying", () => {
     });
 
   assert.equal(preview(150n, sender), "credited");
-  assert.equal(preview(50n, sender), "held"); // below minAmount
-  assert.equal(preview(150n, stranger), "held"); // not on the allowlist
-  // The sender refuses to hand recovery to the receiver, so the hold would fail on chain.
+  assert.equal(preview(50n, sender), "held");
+  assert.equal(preview(150n, stranger), "held");
   assert.equal(preview(50n, sender, ORIGINATOR_RECOVERY_ONLY), "failed");
   assert.equal(preview(50n, sender, NO_HELD_DELIVERY), "failed");
-  // A zero-amount hold is rejected on chain, so the preview must not say "held".
   assert.equal(preview(0n, sender), "failed");
-  // No policy at all: an ordinary credit.
   assert.equal(
     previewOutcome({
       policy: null,
@@ -286,22 +286,19 @@ test("previewOutcome tells a sender what will happen before paying", () => {
 });
 
 test("previewOutcome applies the rent floor to the bond", () => {
-  // On chain the bond is max(policy.receiptBondLamports, rent(RECEIPT_SIZE)). A preview that
-  // compares the raw policy field predicts "held" where the chain refuses the hold.
   const sender = new Uint8Array(32).fill(0x11);
   const policy = {
     minAmount: 100n,
     sourceOwnerMode: 0,
     recoveryAuthorityMode: 0,
     recoveryAuthority: new Uint8Array(32),
-    receiptBondLamports: 0n, // asks for nothing, yet rent is still charged
+    receiptBondLamports: 0n,
     receiptTtlSlots: 1_000n,
     allowlist: [] as Uint8Array[],
   };
   const rent = 2_400_000n;
   const limits = { maxBondLamports: 1_000n, maxTtlSlots: 10_000n, maxRecoveryMode: 2 };
 
-  // A zero rent floor is what the un-floored preview used to assume, and it is wrong.
   assert.equal(
     previewOutcome({
       policy,
@@ -312,7 +309,6 @@ test("previewOutcome applies the rent floor to the bond", () => {
     }),
     "held",
   );
-  // With the real floor, the sender's 1_000 lamport ceiling cannot cover rent.
   assert.equal(
     previewOutcome({
       policy,
@@ -323,7 +319,6 @@ test("previewOutcome applies the rent floor to the bond", () => {
     }),
     "failed",
   );
-  // A ceiling above rent still holds.
   assert.equal(
     previewOutcome({
       policy,
@@ -342,4 +337,55 @@ test("decodeTransferOutcome distinguishes held from credited", () => {
   assert.equal(decodeTransferOutcome(new Uint8Array()), null);
   assert.equal(decodeTransferOutcome(null), null);
   assert.throws(() => decodeTransferOutcome(new Uint8Array([2])));
+});
+
+test("remaining tag wire vectors, shared with wire_vectors.rs", async () => {
+  // Same bytes the Rust suite asserts. InitializeMint2's Option<Pubkey> is the one field where
+  // the IDL can silently produce a body the program rejects: it must be a u8 prefix with NO
+  // payload when None. A fixed-size option would append 32 zero bytes, and `unpack` rejects the
+  // remainder as trailing bytes.
+  const {
+    getInitializeMint2InstructionDataEncoder,
+    getInitializeAccount3InstructionDataEncoder,
+    getMintToInstructionDataEncoder,
+  } = await import("./generated/instructions/index.ts");
+
+  const { getAddressDecoder } = await import("@solana/kit");
+  const addr = (b: Uint8Array) => getAddressDecoder().decode(b);
+  const authority = new Uint8Array(32).fill(0xcd);
+  const freeze = new Uint8Array(32).fill(0xef);
+
+  const none = new Uint8Array(
+    getInitializeMint2InstructionDataEncoder().encode({
+      decimals: 6,
+      mintAuthority: addr(authority),
+      freezeAuthority: null,
+    }),
+  );
+  assert.equal(none.length, 35);
+  assert.equal(hex(none), "00" + "06" + "cd".repeat(32) + "00");
+
+  const some = new Uint8Array(
+    getInitializeMint2InstructionDataEncoder().encode({
+      decimals: 6,
+      mintAuthority: addr(authority),
+      freezeAuthority: addr(freeze),
+    }),
+  );
+  assert.equal(some.length, 67);
+  assert.equal(hex(some), "00" + "06" + "cd".repeat(32) + "01" + "ef".repeat(32));
+
+  const initAccount = new Uint8Array(
+    getInitializeAccount3InstructionDataEncoder().encode({
+      owner: addr(new Uint8Array(32).fill(0x11)),
+    }),
+  );
+  assert.equal(initAccount.length, 33);
+  assert.equal(hex(initAccount), "01" + "11".repeat(32));
+
+  const mintTo = new Uint8Array(
+    getMintToInstructionDataEncoder().encode({ amount: 7n }),
+  );
+  assert.equal(mintTo.length, 9);
+  assert.equal(hex(mintTo), "07" + "0700000000000000");
 });

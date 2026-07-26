@@ -55,18 +55,31 @@ jobs:
   client:
     name: js client (typecheck + wire vectors)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: clients/js
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          # The package ships TypeScript sources with no build step, so the runtime must be
-          # able to strip types natively.
+          # The package ships TypeScript sources with no build step, so the runtime must be able
+          # to strip types natively. scripts/codegen-postprocess.mjs keeps the Codama output
+          # erasable; the smoke import below is what proves it.
           node-version: "22"
           cache: npm
-          cache-dependency-path: clients/js/package-lock.json
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
+          cache-dependency-path: |
+            package-lock.json
+            clients/js/package-lock.json
+      - name: Codama codegen freshness
+        run: |
+          npm ci
+          npm run codegen:check
+      - name: Client typecheck + tests
+        working-directory: clients/js
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+
+      - name: Package entry loads without a build step
+        working-directory: clients/js
+        run: |
+          node --experimental-strip-types \
+            -e "import('./src/index.ts').then(m => { if (Object.keys(m).length < 50) { throw new Error('entry exported ' + Object.keys(m).length + ' names'); } console.log('entry OK,', Object.keys(m).length, 'exports'); })"

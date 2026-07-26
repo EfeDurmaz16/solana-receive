@@ -1,20 +1,20 @@
 {
-  "name": "@solana-receive/helpers",
+  "name": "@solana-receive/client",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Minimal helpers to resolve receive-policy accounts for the Token-2022-shaped reference program",
+  "description": "Kit/Codama client for the token-2022-receive reference program (generated builders + residual helpers)",
   "main": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./generated": "./src/generated/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test src/**/*.test.ts"
   },
   "dependencies": {
-    "@solana/addresses": "^2.1.0",
-    "@solana/keys": "^2.1.0"
+    "@solana/kit": "^7.0.0"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

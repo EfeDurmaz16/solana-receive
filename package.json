@@ -1,0 +1,17 @@
+{
+  "name": "solana-receive",
+  "private": true,
+  "type": "module",
+  "description": "Workspace scripts for Codama client generation (program lives under program/)",
+  "scripts": {
+    "codegen": "codama run js -c codama.mjs && node scripts/codegen-postprocess.mjs",
+    "codegen:check": "npm run codegen && git diff --exit-code -- clients/js/src/generated"
+  },
+  "devDependencies": {
+    "@codama/renderers-js": "2.3.0",
+    "codama": "1.8.0"
+  },
+  "overrides": {
+    "@codama/nodes": "1.8.0"
+  }
+}

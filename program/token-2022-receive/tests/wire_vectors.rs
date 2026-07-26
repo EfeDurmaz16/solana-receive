@@ -155,3 +155,51 @@ fn receive_policy_account_layout_vector() {
     assert_eq!(data[234], 1, "allowlist_len");
     assert_eq!(&data[242..274], &[0x11u8; 32], "allowlist[0]");
 }
+
+/// Tags 0, 1 and 7, and in particular the one field where a client encoder can silently produce
+/// a body the program rejects.
+///
+/// `InitializeMint2`'s `Option<Pubkey>` is encoded as a u8 prefix with **no payload** when
+/// `None`. A fixed-size option would emit 32 zero bytes after the prefix, and since `unpack`
+/// requires each arm to consume its input exactly, the program would reject that as trailing
+/// bytes. Nothing else pins this shape, so a codegen change that flips it would otherwise land
+/// green.
+#[test]
+fn remaining_tag_wire_vectors() {
+    use solana_program::pubkey::Pubkey;
+
+    let authority = Pubkey::new_from_array([0xcd; 32]);
+    let freeze = Pubkey::new_from_array([0xef; 32]);
+
+    let none = ReceiveTokenInstruction::InitializeMint2 {
+        decimals: 6,
+        mint_authority: authority,
+        freeze_authority: None,
+    }
+    .pack();
+    assert_eq!(none.len(), 35, "tag + decimals + authority + option prefix");
+    assert_eq!(hex(&none), format!("00{}{}{}", "06", "cd".repeat(32), "00"));
+
+    let some = ReceiveTokenInstruction::InitializeMint2 {
+        decimals: 6,
+        mint_authority: authority,
+        freeze_authority: Some(freeze),
+    }
+    .pack();
+    assert_eq!(some.len(), 67);
+    assert_eq!(
+        hex(&some),
+        format!("00{}{}{}{}", "06", "cd".repeat(32), "01", "ef".repeat(32))
+    );
+
+    let init_account = ReceiveTokenInstruction::InitializeAccount3 {
+        owner: Pubkey::new_from_array([0x11; 32]),
+    }
+    .pack();
+    assert_eq!(init_account.len(), 33);
+    assert_eq!(hex(&init_account), format!("01{}", "11".repeat(32)));
+
+    let mint_to = ReceiveTokenInstruction::MintTo { amount: 7 }.pack();
+    assert_eq!(mint_to.len(), 9);
+    assert_eq!(hex(&mint_to), format!("07{}", "0700000000000000"));
+}

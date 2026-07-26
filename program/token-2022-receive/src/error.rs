@@ -3,7 +3,7 @@ use solana_program::program_error::ProgramError;
 use thiserror::Error;
 
 /// Discriminants are explicit and stable: they surface to clients as
-/// `ProgramError::Custom(n)` and are quoted in `docs/VERIFICATION.md`. Gaps at 0, 5, 12 and 16
+/// `ProgramError::Custom(n)` and are quoted in `docs/VERIFICATION.md`. Gaps at 0, 5, 11, 12 and 16
 /// are retired variants; reuse them only if the meaning matches.
 #[derive(Clone, Debug, Eq, Error, PartialEq, IntoPrimitive, TryFromPrimitive)]
 #[repr(u32)]
