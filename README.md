@@ -1,8 +1,15 @@
 # solana-receive
 
-Receiver-side **held delivery** for Token-2022-shaped token accounts: an opt-in destination `ReceivePolicy` that can credit, fail, or route non-matching transfers into a receiver-scoped guard with a claimable receipt — without reverting the outer transfer for policy rejection alone.
+This repo explores what happens when a token receiver can attach rules to an
+incoming transfer. If the transfer is valid and accepted, it credits the receiver.
+If token validation fails, the transfer fails. If the receiver's policy rejects it,
+the funds are held in a receiver-scoped guard with a receipt instead of pretending
+delivery happened. Operators should read [docs/OPERATOR.md](docs/OPERATOR.md)
+before running demos or citing evidence.
 
-Greenfield **custom program ID** reference. Not canonical Token-2022. **Not wire-compatible** with `TokenzQd…` instruction tags. Does not intercept legacy Tokenkeg USDC/USDT.
+The implementation is a **custom program ID** reference shaped like
+Token-2022. It is not canonical Token-2022, is **not wire-compatible** with
+`TokenzQd…` instruction tags, and does not intercept legacy Tokenkeg USDC/USDT.
 
 ## Why
 
@@ -49,13 +56,26 @@ receipt and could never be recovered.
 | Measured | CU ceilings + footprints under LiteSVM (see [docs/VERIFICATION.md](docs/VERIFICATION.md)) |
 | Not claimed | Canonical Token-2022, TokenzQd wire compatibility, legacy USDC interception, full upstream extension parity, mainnet product, any upgrade or migration path |
 
+## Prerequisites
+
+```bash
+sh -c "$(curl -sSfL https://release.anza.xyz/v4.1.1/install)"
+export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+node --version # 22+ recommended for strip-types client tests
+```
+
+See [docs/OPERATOR.md](docs/OPERATOR.md) for the full smoke path, Surfpool pin,
+and declared-ID vs local deploy-keypair story.
+
 ## Tests
 
 ```bash
-export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
-cargo build-sbf --manifest-path program/token-2022-receive/Cargo.toml
-cargo test -p token-2022-receive
+./scripts/smoke.sh
 ```
+
+Expect exit 0. The wrapper runs the Rust/SBF gates plus root `npm ci`,
+`npm run codegen:check`, and the JS client suite (`cd clients/js && npm ci &&
+npm test`); the JS suite currently reports 14 passing.
 
 Security-relevant regression suites: `guard_custody` (held funds unspendable by the receiver,
 outcome reporting) and `policy_bounds` (write-once policy, mode validation, bond/TTL caps).
@@ -94,10 +114,10 @@ without the matching secret. Full story: [docs/OPERATOR.md](docs/OPERATOR.md). N
 
 ## Proposal path
 
-1. [docs/SPEC.md](docs/SPEC.md) — normative reference behavior  
-2. [docs/proposals/srfc-receive-policy-held-delivery.md](docs/proposals/srfc-receive-policy-held-delivery.md) — discussion draft  
-3. [docs/proposals/decision-request.md](docs/proposals/decision-request.md) — mint flag / metas / greenfield / SIMD  
-4. Maintainer discussion vs [#124](https://github.com/solana-program/token-2022/issues/124) (revert hook vs held delivery)  
-5. SIMD **only if** maintainers confirm canonical Token-2022 / runtime scope  
+1. [docs/SPEC.md](docs/SPEC.md) — normative reference behavior
+2. [docs/proposals/srfc-receive-policy-held-delivery.md](docs/proposals/srfc-receive-policy-held-delivery.md) — discussion draft
+3. [docs/proposals/decision-request.md](docs/proposals/decision-request.md) — mint flag / metas / custom reference / SIMD
+4. Maintainer discussion vs [#124](https://github.com/solana-program/token-2022/issues/124) (revert hook vs held delivery)
+5. SIMD **only if** maintainers confirm canonical Token-2022 / runtime scope
 
 License: [Apache-2.0](LICENSE). Program details: [program/token-2022-receive/README.md](program/token-2022-receive/README.md).

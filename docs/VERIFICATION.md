@@ -18,7 +18,7 @@ Operator smoke checklist and declared-ID vs local keypair story: **[OPERATOR.md]
 | Wire vectors | `cargo test -p token-2022-receive --test wire_vectors` | Byte vectors shared with the JS client |
 | Sender limits | `cargo build-sbf` then `cargo test -p token-2022-receive --test sender_limits` | Refuse a hold; cap bond and TTL; rent-floored bond |
 | Legacy layouts | `cargo build-sbf` then `cargo test -p token-2022-receive --test legacy_state` | Unrecognised layouts fail closed and are left untouched |
-| JS client | `cd clients/js && npm run typecheck && npm test` | Encoder vectors, pubkey length checks, account roles |
+| JS client | `cd clients/js && npm ci && npm run typecheck && npm test` | Encoder vectors, pubkey length checks, account roles |
 | Host verify | `cargo test -p token-2022-receive --test verify_no_policy --test verify_policy_transfer --test verify_receipt_lifecycle` | Stateful AccountInfo + syscall stubs |
 | Golden vectors | `cargo test -p token-2022-receive --test golden_vectors` | sRFC §9 IDs `V-NP`…`V-AU` + nonce contract |
 | Upstream differential | `cargo test -p token-2022-receive --test upstream_differential` | Layout + no-policy overlap (not TokenzQd) |
