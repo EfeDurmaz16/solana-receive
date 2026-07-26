@@ -11,7 +11,7 @@
  *
  * Pin: Surfpool CLI v1.5.0 (see docs/VERIFICATION.md).
  */
-import { writeFileSync } from "node:fs";
+import { unlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -60,6 +60,7 @@ const {
 const RPC_URL = process.env.RECEIVE_RPC_URL ?? "http://127.0.0.1:8899";
 const WS_URL = process.env.RECEIVE_WS_URL ?? "ws://127.0.0.1:8900";
 const PROGRAM_ID = address(process.env.RECEIVE_PROGRAM_ID ?? DECLARED_PROGRAM_ID);
+const OBSERVED_SURFPOOL_VERSION = process.env.RECEIVE_SURFPOOL_VERSION ?? null;
 const SYSTEM_PROGRAM = address("11111111111111111111111111111111");
 const DECIMALS = 6;
 const MIN_AMOUNT = 100n;
@@ -70,11 +71,21 @@ const MINT_SIZE = 82;
 const ACCOUNT_SIZE = 165;
 /** ACCOUNT_SIZE + account-type + TLV header + ReceivePolicy (see docs/WIRE.md). */
 const ACCOUNT_WITH_POLICY_SIZE = 498;
+const ARTIFACT_PATH = resolve(__dirname, "../../../demos/receive/last-run.json");
 
 const rpc = createSolanaRpc(RPC_URL);
 const rpcSubscriptions = createSolanaRpcSubscriptions(WS_URL);
 const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
 const programConfig = { programAddress: PROGRAM_ID };
+
+/** Remove any prior success artifact before this run can claim green. */
+function clearEvidenceArtifact() {
+  try {
+    unlinkSync(ARTIFACT_PATH);
+  } catch (e) {
+    if (e && e.code !== "ENOENT") throw e;
+  }
+}
 
 function log(step, detail) {
   console.log(`\n== ${step} ==`);
@@ -154,6 +165,7 @@ async function tokenAmount(account) {
 }
 
 async function main() {
+  clearEvidenceArtifact();
   log("surfpool lifecycle", `rpc=${RPC_URL}\nprogram=${PROGRAM_ID}`);
 
   // Health check.
@@ -406,6 +418,8 @@ async function main() {
   log("held", `sig=${heldSig}\nguard=${guardAfterHold}\nreceipt=${heldReceipt}`);
 
   // Return data is last-ix scoped; fetch tx meta when available.
+  // Balance pins above remain authoritative; wrong return data still fails the run.
+  let heldReturnData = null;
   try {
     const tx = await rpc
       .getTransaction(heldSig, { encoding: "json", maxSupportedTransactionVersion: 0 })
@@ -417,12 +431,17 @@ async function main() {
       if (outcome !== TransferOutcome.Held) {
         throw new Error(`return data want Held got ${outcome}`);
       }
+      heldReturnData = outcome;
       log("held return data", `byte=${outcome}`);
     } else {
       log("held return data", "unavailable on this RPC build (balance check is authoritative)");
     }
   } catch (e) {
-    log("held return data", `skip: ${e.message ?? e}`);
+    const msg = String(e?.message ?? e);
+    if (msg.startsWith("return data want") || msg.startsWith("unrecognized transfer outcome")) {
+      throw e;
+    }
+    log("held return data", `skip: ${msg}`);
   }
 
   // 4a) Claim (Originator = sourceOwner).
@@ -444,7 +463,7 @@ async function main() {
     ),
   ]);
 
-  await sendIx("ClaimReceipt", payer, [
+  const claimSig = await sendIx("ClaimReceipt", payer, [
     getClaimReceiptInstruction(
       {
         receipt: heldReceipt,
@@ -460,7 +479,7 @@ async function main() {
   ]);
   const claimBal = await tokenAmount(claimDest.address);
   if (claimBal !== 1n) throw new Error(`claim want 1 got ${claimBal}`);
-  log("claimed", `claimDest=${claimBal}`);
+  log("claimed", `sig=${claimSig}\nclaimDest=${claimBal}`);
 
   // 4b) Second hold + expiry close after time travel.
   const expiryNonce = crypto.getRandomValues(new Uint8Array(32));
@@ -474,7 +493,10 @@ async function main() {
     programConfig,
   );
 
-  await sendIx("TransferChecked held (expiry case)", payer, [
+  const sourceBeforeExpiryHold = await tokenAmount(source.address);
+  const guardBeforeExpiryHold = await tokenAmount(guardToken);
+
+  const expiryHoldSig = await sendIx("TransferChecked held (expiry case)", payer, [
     getTransferCheckedInstruction(
       {
         source: source.address,
@@ -497,14 +519,32 @@ async function main() {
     ),
   ]);
 
-  const slotBefore = (await rpc.getSlot().send());
-  const targetSlot = BigInt(slotBefore) + DEMO_TTL_SLOTS + 10n;
+  const guardAfterExpiryHold = await tokenAmount(guardToken);
+  if (guardAfterExpiryHold !== guardBeforeExpiryHold + 1n) {
+    throw new Error(
+      `expiry hold: guard want ${guardBeforeExpiryHold + 1n} got ${guardAfterExpiryHold}`,
+    );
+  }
+
+  const slotBefore = await rpc.getSlot().send();
+  const minExpiredSlot = BigInt(slotBefore) + DEMO_TTL_SLOTS + 1n;
+  const targetSlot = minExpiredSlot + 10n;
   await rpcCall("surfnet_timeTravel", [{ absoluteSlot: Number(targetSlot) }]);
-  const slotAfter = await rpc.getSlot().send();
-  log("time travel", `from=${slotBefore} to=${slotAfter} (target ${targetSlot})`);
+  let slotAfter = await rpc.getSlot().send();
+  // Some Surfpool builds land one short of absoluteSlot; nudge once if still pre-expiry.
+  if (BigInt(slotAfter) < minExpiredSlot) {
+    await rpcCall("surfnet_timeTravel", [{ absoluteSlot: Number(targetSlot + 20n) }]);
+    slotAfter = await rpc.getSlot().send();
+  }
+  if (BigInt(slotAfter) < minExpiredSlot) {
+    throw new Error(
+      `time travel: slot want >= ${minExpiredSlot} (ttl+1) got ${slotAfter}`,
+    );
+  }
+  log("time travel", `from=${slotBefore} to=${slotAfter} (minExpired ${minExpiredSlot})`);
 
   // Tokens return to a source-owner token account (reuse `source`).
-  await sendIx("CloseExpiredReceipt", payer, [
+  const expiryCloseSig = await sendIx("CloseExpiredReceipt", payer, [
     getCloseExpiredReceiptInstruction(
       {
         receipt: expiryReceipt,
@@ -517,12 +557,36 @@ async function main() {
       programConfig,
     ),
   ]);
-  log("expired close", "tokens returned to source; bond to bond payer");
+
+  const sourceAfterExpiry = await tokenAmount(source.address);
+  const guardAfterExpiry = await tokenAmount(guardToken);
+  if (sourceAfterExpiry !== sourceBeforeExpiryHold) {
+    // Hold debited source by 1; close should restore that 1.
+    throw new Error(
+      `expiry close: source want ${sourceBeforeExpiryHold} got ${sourceAfterExpiry}`,
+    );
+  }
+  if (guardAfterExpiry !== guardBeforeExpiryHold) {
+    throw new Error(
+      `expiry close: guard want ${guardBeforeExpiryHold} got ${guardAfterExpiry}`,
+    );
+  }
+  log("expired close", `sig=${expiryCloseSig}\nsource=${sourceAfterExpiry}\nguard=${guardAfterExpiry}`);
+
+  if (!OBSERVED_SURFPOOL_VERSION) {
+    throw new Error(
+      "RECEIVE_SURFPOOL_VERSION unset; refuse to write evidence that invents a Surfpool pin",
+    );
+  }
 
   const summary = {
+    ok: true,
+    finishedAt: new Date().toISOString(),
     programId: PROGRAM_ID,
     rpc: RPC_URL,
-    surfpool: "1.5.0",
+    surfpool: OBSERVED_SURFPOOL_VERSION,
+    slotBeforeTimeTravel: Number(slotBefore),
+    slotAfterTimeTravel: Number(slotAfter),
     mint: mint.address,
     destination: destination.address,
     guardToken,
@@ -531,16 +595,26 @@ async function main() {
     claimBalance: (await tokenAmount(claimDest.address)).toString(),
     declaredProgramId: DECLARED_PROGRAM_ID,
     usedLocalProgramId: PROGRAM_ID !== DECLARED_PROGRAM_ID,
+    heldReturnData,
+    steps: {
+      credited: { ok: true, signature: creditedSig },
+      held: { ok: true, signature: heldSig },
+      claim: { ok: true, signature: claimSig },
+      expiry: {
+        ok: true,
+        signature: expiryCloseSig,
+        holdSignature: expiryHoldSig,
+      },
+    },
     nonClaims: [
-    "Custom program ID reference - not canonical Token-2022",
-    "Custom mint - not legacy USDC/USDT interception",
-    "Local Surfpool demo - not mainnet product",
+      "Custom program ID reference - not canonical Token-2022",
+      "Custom mint - not legacy USDC/USDT interception",
+      "Local Surfpool demo - not mainnet product",
     ],
   };
 
-  const outPath = resolve(__dirname, "../../../demos/receive/last-run.json");
-  writeFileSync(outPath, JSON.stringify(summary, null, 2) + "\n");
-  log("ok", `wrote ${outPath}\n${JSON.stringify(summary, null, 2)}`);
+  writeFileSync(ARTIFACT_PATH, JSON.stringify(summary, null, 2) + "\n");
+  log("ok", `wrote ${ARTIFACT_PATH}\n${JSON.stringify(summary, null, 2)}`);
 }
 
 main().catch((err) => {

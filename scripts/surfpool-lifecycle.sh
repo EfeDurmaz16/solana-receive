@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Surfpool localnet: build → start → deploy → Kit lifecycle (credited/held/claim/expiry).
 #
-# Pin: Surfpool CLI v1.5.0
+# Pin: Surfpool CLI v1.5.0 (hard requirement; mismatch aborts).
 #   darwin-arm64: https://github.com/solana-foundation/surfpool/releases/download/v1.5.0/surfpool-darwin-arm64.tar.gz
 # LiteSVM remains the automated semantic/CU gate; this is RPC fidelity + demo evidence.
 set -euo pipefail
@@ -16,7 +16,10 @@ RPC_URL="${RECEIVE_RPC_URL:-http://127.0.0.1:8899}"
 WS_URL="${RECEIVE_WS_URL:-ws://127.0.0.1:8900}"
 RPC_PORT="${RECEIVE_RPC_PORT:-8899}"
 WS_PORT="${RECEIVE_WS_PORT:-8900}"
+ARTIFACT="${ROOT}/demos/receive/last-run.json"
 SURFPOOL_PID=""
+DEPLOY_TIMEOUT_SEC="${RECEIVE_DEPLOY_TIMEOUT_SEC:-120}"
+LIFECYCLE_TIMEOUT_SEC="${RECEIVE_LIFECYCLE_TIMEOUT_SEC:-180}"
 
 cleanup() {
   if [[ -n "${SURFPOOL_PID}" ]] && kill -0 "${SURFPOOL_PID}" 2>/dev/null; then
@@ -26,10 +29,26 @@ cleanup() {
 }
 trap cleanup EXIT
 
+run_with_timeout() {
+  local secs="$1"
+  shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "${secs}" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "${secs}" "$@"
+  else
+    "$@"
+  fi
+}
+
 echo "== solana-receive Surfpool lifecycle =="
 echo "repo: $ROOT"
 echo "surfpool pin: v${SURFPOOL_PIN}"
 echo
+
+# Stale success artifact must not survive a failed rerun (demo UI evidence).
+rm -f "${ARTIFACT}"
+mkdir -p "$(dirname "${ARTIFACT}")"
 
 if ! command -v cargo-build-sbf >/dev/null 2>&1; then
   echo "error: cargo-build-sbf not on PATH"
@@ -45,7 +64,9 @@ fi
 VERSION_LINE="$(surfpool --version 2>/dev/null || true)"
 echo "surfpool: ${VERSION_LINE}"
 if [[ "${VERSION_LINE}" != *"${SURFPOOL_PIN}"* ]]; then
-  echo "warning: expected Surfpool v${SURFPOOL_PIN}; continuing with whatever is installed"
+  echo "error: expected Surfpool v${SURFPOOL_PIN}, got: ${VERSION_LINE}"
+  echo "Install the pin from https://github.com/solana-foundation/surfpool/releases/tag/v${SURFPOOL_PIN}"
+  exit 1
 fi
 
 echo "[1/5] Building SBF .so"
@@ -76,17 +97,18 @@ surfpool start \
 SURFPOOL_PID=$!
 
 for i in $(seq 1 60); do
+  # Require our child to still be alive before trusting anything on the port.
+  if ! kill -0 "${SURFPOOL_PID}" 2>/dev/null; then
+    echo "error: surfpool exited early; see /tmp/solana-receive-surfpool.log"
+    tail -40 /tmp/solana-receive-surfpool.log
+    exit 1
+  fi
   if curl -sf "$RPC_URL" -H 'content-type: application/json' \
     -d '{"jsonrpc":"2.0","id":1,"method":"getHealth","params":[]}' >/dev/null 2>&1 \
     || curl -sf "$RPC_URL" -H 'content-type: application/json' \
     -d '{"jsonrpc":"2.0","id":1,"method":"getVersion","params":[]}' >/dev/null 2>&1; then
-    echo "    rpc ready at $RPC_URL"
+    echo "    rpc ready at $RPC_URL (pid ${SURFPOOL_PID})"
     break
-  fi
-  if ! kill -0 "${SURFPOOL_PID}" 2>/dev/null; then
-    echo "error: surfpool exited early; see /tmp/solana-receive-surfpool.log"
-    cat /tmp/solana-receive-surfpool.log | tail -40
-    exit 1
   fi
   if [[ "$i" -eq 60 ]]; then
     echo "error: rpc not ready; see /tmp/solana-receive-surfpool.log"
@@ -98,27 +120,39 @@ done
 echo
 
 echo "[3/5] Deploy program"
-solana config set --url "$RPC_URL" >/dev/null
-# Ensure default keypair can pay fees.
+# Do not mutate global ~/.config/solana/cli/config.yml; pass --url per command.
 if [[ ! -f "${HOME}/.config/solana/id.json" ]]; then
   solana-keygen new --no-bip39-passphrase --silent -o "${HOME}/.config/solana/id.json"
 fi
-solana airdrop 100 >/dev/null
-solana program deploy "$SO" --program-id "$KP"
+run_with_timeout "${DEPLOY_TIMEOUT_SEC}" solana airdrop 100 --url "$RPC_URL" >/dev/null
+run_with_timeout "${DEPLOY_TIMEOUT_SEC}" solana program deploy "$SO" --program-id "$KP" --url "$RPC_URL"
 echo "    deployed $PROGRAM_ID"
 echo
 
 echo "[4/5] Kit client lifecycle (credited → held → claim / expiry)"
 (
   cd clients/js
-  RECEIVE_RPC_URL="$RPC_URL" \
-  RECEIVE_WS_URL="$WS_URL" \
-  RECEIVE_PROGRAM_ID="$PROGRAM_ID" \
-  node --experimental-strip-types ./scripts/surfpool-lifecycle.mjs
+  export RECEIVE_RPC_URL="$RPC_URL"
+  export RECEIVE_WS_URL="$WS_URL"
+  export RECEIVE_PROGRAM_ID="$PROGRAM_ID"
+  export RECEIVE_SURFPOOL_VERSION="${SURFPOOL_PIN}"
+  run_with_timeout "${LIFECYCLE_TIMEOUT_SEC}" \
+    node --experimental-strip-types ./scripts/surfpool-lifecycle.mjs
 )
 echo
 
+if [[ ! -f "${ARTIFACT}" ]]; then
+  echo "error: lifecycle finished without writing ${ARTIFACT}"
+  exit 1
+fi
+if ! grep -q '"ok": true' "${ARTIFACT}"; then
+  echo "error: ${ARTIFACT} is not a successful evidence artifact"
+  exit 1
+fi
+
 echo "[5/5] Done"
-echo "    demo snapshot: demos/receive/last-run.json"
-echo "    open demos/receive/index.html for the honest walkthrough UI"
+echo "    demo snapshot: ${ARTIFACT}"
+echo "    serve the UI (module + fetch need http):"
+echo "      python3 -m http.server 8765 --directory demos/receive"
+echo "      open http://127.0.0.1:8765/"
 echo "    Surfpool log: /tmp/solana-receive-surfpool.log"

@@ -22,11 +22,11 @@ How to reproduce host and on-VM evidence for `token-2022-receive`.
 | Upstream differential | `cargo test -p token-2022-receive --test upstream_differential` | Layout + no-policy overlap (not TokenzQd) |
 | CU ceilings | `cargo build-sbf` then `cargo test -p token-2022-receive --test cu_ceilings -- --nocapture` | Regression alarms + tx footprint |
 | LiteSVM | `cargo build-sbf` then `cargo test -p token-2022-receive --test litesvm_before_after --test litesvm_lifecycle -- --nocapture` | Real SBF + CU |
-| Surfpool | `./scripts/surfpool-lifecycle.sh` | RPC fidelity + Kit demo (Surfpool CLI v1.5.0; optional if CLI absent) |
+| Surfpool | `./scripts/surfpool-lifecycle.sh` | Manual RPC fidelity + Kit demo (Surfpool CLI v1.5.0; **not** in CI) |
 
-CI runs all of the above on every push and pull request (`.github/workflows/ci.yml`), including
-`cargo fmt --check` and `cargo clippy --lib -- -D warnings`.
-
+CI runs the automated suites above (everything except Surfpool) on every push and pull request
+(`.github/workflows/ci.yml`), including `cargo fmt --check` and `cargo clippy --lib -- -D warnings`.
+Surfpool remains a local/manual evidence path until runners carry the CLI pin.
 Full package:
 
 ```bash
@@ -161,8 +161,11 @@ If the local keypair pubkey differs from `declare_id!`
 `RECEIVE_PROGRAM_ID` for the client. Matching the declared ID still requires
 that keypair. Never commit keypairs.
 
-Demo UI: `demos/receive/` (loads `last-run.json` after a successful run).
-
+Demo UI: `demos/receive/` loads `last-run.json` **only** when it is a successful evidence
+artifact (`ok: true`, `finishedAt`, per-step signatures). The lifecycle script deletes any prior
+artifact at start and writes a new one only after all post-conditions pass. Serve over http
+(`python3 -m http.server 8765 --directory demos/receive`); `file://` cannot fetch the module
+artifact.
 ## Gaps (not yet regression-gated)
 
 1. Throughput under a real scheduler. The account-lock structure that decides contention is now

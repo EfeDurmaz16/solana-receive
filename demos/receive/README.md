@@ -10,7 +10,7 @@ Honest local demo of the receive-policy lifecycle over **Surfpool RPC**, driven 
 
 ## Pin
 
-Surfpool CLI **v1.5.0**.
+Surfpool CLI **v1.5.0** (hard requirement; mismatch aborts).
 
 ## Run
 
@@ -20,10 +20,15 @@ curl -sL https://github.com/solana-foundation/surfpool/releases/download/v1.5.0/
 mv surfpool ~/.local/bin/
 
 ./scripts/surfpool-lifecycle.sh
+
+# UI needs http (ES module + fetch); do not open file://
+python3 -m http.server 8765 --directory demos/receive
+# open http://127.0.0.1:8765/
 ```
 
-That script builds the `.so`, starts Surfpool offline, deploys with the local build-sbf keypair, and runs `scripts/surfpool-lifecycle.mjs` (credited → held → claim → expiry via `surfnet_timeTravel`).
+The shell deletes `demos/receive/last-run.json` before each run. The Kit script writes a new
+artifact only after credited / held / claim / expiry post-conditions pass (`ok: true`,
+`finishedAt`, step signatures). A failed rerun leaves no success artifact for the UI to paint green.
 
-Open `demos/receive/index.html` after a successful run to load `last-run.json`.
-
-If the local deploy keypair differs from `declare_id!` (`GyrTVV4h…`), the lifecycle script sets `RECEIVE_PROGRAM_ID` automatically. Matching the declared ID requires the keypair for that pubkey.
+If the local deploy keypair differs from `declare_id!` (`GyrTVV4h…`), the lifecycle script sets
+`RECEIVE_PROGRAM_ID` automatically. Matching the declared ID requires the keypair for that pubkey.

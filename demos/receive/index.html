@@ -51,6 +51,9 @@
         <span class="dot" aria-hidden="true"></span>
         Mint
         <code data-field="mint">—</code>
+        <span class="dot" aria-hidden="true"></span>
+        Finished
+        <code data-field="finishedAt">—</code>
       </p>
 
       <p class="status" id="status" role="status">Waiting for <code>last-run.json</code>…</p>
@@ -58,6 +61,8 @@
       <p class="run">
         From the repo root:
         <code>./scripts/surfpool-lifecycle.sh</code>
+        then serve the UI:
+        <code>python3 -m http.server 8765 --directory demos/receive</code>
       </p>
     </main>
     <script type="module" src="./app.js"></script>

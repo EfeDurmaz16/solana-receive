@@ -149,6 +149,11 @@ body {
   color: var(--success);
 }
 
+.status.is-bad,
+.path li.is-bad .step-label {
+  color: #a5341e;
+}
+
 .run {
   margin: 2.5rem 0 0;
   color: var(--faint);
