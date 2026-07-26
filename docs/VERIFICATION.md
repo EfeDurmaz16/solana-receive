@@ -4,6 +4,8 @@ How to reproduce host and on-VM evidence for `token-2022-receive`.
 
 **Program ID:** `GyrTVV4hbcuzJuSz86FNq7K2UVAoSJQtcgHTVTz1hPPq`
 
+Operator smoke checklist and declared-ID vs local keypair story: **[OPERATOR.md](./OPERATOR.md)**.
+
 ## Suites
 
 | Suite | Command | Role |
@@ -27,14 +29,16 @@ How to reproduce host and on-VM evidence for `token-2022-receive`.
 CI runs the automated suites above (everything except Surfpool) on every push and pull request
 (`.github/workflows/ci.yml`), including `cargo fmt --check` and `cargo clippy --lib -- -D warnings`.
 Surfpool remains a local/manual evidence path until runners carry the CLI pin.
-Full package:
+Full package (`build-sbf` before LiteSVM tests — the suites load `target/deploy/*.so`):
 
 ```bash
 export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
-cargo test -p token-2022-receive
-cargo build-sbf --manifest-path program/token-2022-receive/Cargo.toml
+cargo build-sbf --manifest-path program/token-2022-receive/Cargo.toml -- --locked
+cargo test -p token-2022-receive --locked
 cargo test -p token-2022-receive --test litesvm_before_after --test litesvm_lifecycle -- --nocapture
 ```
+
+Or: `./scripts/smoke.sh` then the LiteSVM / CU commands in [OPERATOR.md](./OPERATOR.md).
 
 Host stubs are not CU-faithful. Prefer LiteSVM for compute numbers.
 
@@ -166,6 +170,9 @@ artifact (`ok: true`, `finishedAt`, per-step signatures). The lifecycle script d
 artifact at start and writes a new one only after all post-conditions pass. Serve over http
 (`python3 -m http.server 8765 --directory demos/receive`); `file://` cannot fetch the module
 artifact.
+
+See [OPERATOR.md](./OPERATOR.md) for the full smoke path and ID story.
+
 ## Gaps (not yet regression-gated)
 
 1. Throughput under a real scheduler. The account-lock structure that decides contention is now
