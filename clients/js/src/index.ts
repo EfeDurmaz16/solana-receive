@@ -33,7 +33,11 @@ export {
   receiptSeeds,
 } from "./constants.ts";
 
-import { ALLOWLIST_CAP } from "./constants.ts";
+import {
+  ALLOWLIST_CAP,
+  MAX_RECEIPT_BOND_LAMPORTS,
+  MAX_RECEIPT_TTL_SLOTS,
+} from "./constants.ts";
 
 export {
   deriveGuardTokenAddress,
@@ -332,6 +336,16 @@ export function previewOutcome(params: {
   if (accepts) return "credited";
 
   if (amount === 0n) return "failed";
+
+  // The held path re-checks the protocol caps at point of use, because the policy is a TLV blob
+  // with no version of its own and could carry a value written before the caps existed. A
+  // preview that only compares sender limits would say `held` where the chain fails.
+  if (
+    policy.receiptBondLamports > MAX_RECEIPT_BOND_LAMPORTS ||
+    policy.receiptTtlSlots > MAX_RECEIPT_TTL_SLOTS
+  ) {
+    return "failed";
+  }
 
   const rentFloor = BigInt(params.rentExemptReceiptLamports);
   const bond =

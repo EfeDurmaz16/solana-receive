@@ -11,17 +11,13 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/**/*.test.ts"
+    "test": "node --experimental-strip-types --test src/**/*.test.ts"
   },
   "dependencies": {
     "@solana/kit": "^7.0.0"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
-    "tsx": "^4.20.0",
     "typescript": "^5.8.0"
-  },
-  "peerDependencies": {
-    "@solana/kit": "^7.0.0"
   }
 }

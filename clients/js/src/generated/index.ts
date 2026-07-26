@@ -6,7 +6,7 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from './errors';
-export * from './instructions';
-export * from './pdas';
-export * from './programs';
+export * from './errors/index.ts';
+export * from './instructions/index.ts';
+export * from './pdas/index.ts';
+export * from './programs/index.ts';

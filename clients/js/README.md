@@ -14,6 +14,22 @@ Kit / Codama client for the `token-2022-receive` reference program.
 - **Not** Tokenkeg USDC interception
 - **Not** ambient ATA / wallet policy enforcement
 
+## Consuming this package
+
+It ships TypeScript sources with no build step: `main` and `exports` point at `.ts` files. That
+needs a TypeScript-aware pipeline, which means a bundler or a type-stripping runtime such as
+`node --experimental-strip-types`. A plain `tsc` consumer on `moduleResolution: nodenext` cannot
+import `.ts` specifiers without `allowImportingTsExtensions`.
+
+`npm run codegen` post-processes the Codama output so it stays erasable and explicitly
+extensioned; `scripts/codegen-postprocess.mjs` fails the build if a codegen upgrade emits
+something a stripping runtime cannot execute, and CI imports the entry point to prove it.
+
+When calling `getTransferCheckedInstruction` directly, the five policy accounts (`guardToken`,
+`guardState`, `receipt`, `bondPayer`, `systemProgram`) are positional and all-or-nothing: pass all
+five for the held path or none for the 4-account path. A subset silently shifts the remainder into
+the wrong slots.
+
 ## Install / regenerate
 
 ```bash

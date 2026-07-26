@@ -338,3 +338,54 @@ test("decodeTransferOutcome distinguishes held from credited", () => {
   assert.equal(decodeTransferOutcome(null), null);
   assert.throws(() => decodeTransferOutcome(new Uint8Array([2])));
 });
+
+test("remaining tag wire vectors, shared with wire_vectors.rs", async () => {
+  // Same bytes the Rust suite asserts. InitializeMint2's Option<Pubkey> is the one field where
+  // the IDL can silently produce a body the program rejects: it must be a u8 prefix with NO
+  // payload when None. A fixed-size option would append 32 zero bytes, and `unpack` rejects the
+  // remainder as trailing bytes.
+  const {
+    getInitializeMint2InstructionDataEncoder,
+    getInitializeAccount3InstructionDataEncoder,
+    getMintToInstructionDataEncoder,
+  } = await import("./generated/instructions/index.ts");
+
+  const { getAddressDecoder } = await import("@solana/kit");
+  const addr = (b: Uint8Array) => getAddressDecoder().decode(b);
+  const authority = new Uint8Array(32).fill(0xcd);
+  const freeze = new Uint8Array(32).fill(0xef);
+
+  const none = new Uint8Array(
+    getInitializeMint2InstructionDataEncoder().encode({
+      decimals: 6,
+      mintAuthority: addr(authority),
+      freezeAuthority: null,
+    }),
+  );
+  assert.equal(none.length, 35);
+  assert.equal(hex(none), "00" + "06" + "cd".repeat(32) + "00");
+
+  const some = new Uint8Array(
+    getInitializeMint2InstructionDataEncoder().encode({
+      decimals: 6,
+      mintAuthority: addr(authority),
+      freezeAuthority: addr(freeze),
+    }),
+  );
+  assert.equal(some.length, 67);
+  assert.equal(hex(some), "00" + "06" + "cd".repeat(32) + "01" + "ef".repeat(32));
+
+  const initAccount = new Uint8Array(
+    getInitializeAccount3InstructionDataEncoder().encode({
+      owner: addr(new Uint8Array(32).fill(0x11)),
+    }),
+  );
+  assert.equal(initAccount.length, 33);
+  assert.equal(hex(initAccount), "01" + "11".repeat(32));
+
+  const mintTo = new Uint8Array(
+    getMintToInstructionDataEncoder().encode({ amount: 7n }),
+  );
+  assert.equal(mintTo.length, 9);
+  assert.equal(hex(mintTo), "07" + "0700000000000000");
+});

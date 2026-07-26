@@ -6,4 +6,4 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from './token2022Receive';
+export * from './token2022Receive.ts';

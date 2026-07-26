@@ -59,22 +59,24 @@ import {
   type ParsedMintToInstruction,
   type ParsedTransferCheckedInstruction,
   type TransferCheckedInput,
-} from '../instructions';
-import { findGuardStatePda, findGuardTokenPda, findReceiptPda } from '../pdas';
+} from '../instructions/index.ts';
+import { findGuardStatePda, findGuardTokenPda, findReceiptPda } from '../pdas/index.ts';
 
 export const TOKEN2022_RECEIVE_PROGRAM_ADDRESS =
   'GyrTVV4hbcuzJuSz86FNq7K2UVAoSJQtcgHTVTz1hPPq' as Address<'GyrTVV4hbcuzJuSz86FNq7K2UVAoSJQtcgHTVTz1hPPq'>;
 
-export enum Token2022ReceiveInstruction {
-  InitializeMint2,
-  InitializeAccount3,
-  InitializeReceivePolicy,
-  EnsureGuard,
-  TransferChecked,
-  ClaimReceipt,
-  CloseExpiredReceipt,
-  MintTo,
-}
+export const Token2022ReceiveInstruction = {
+  InitializeMint2: 0,
+  InitializeAccount3: 1,
+  InitializeReceivePolicy: 2,
+  EnsureGuard: 3,
+  TransferChecked: 4,
+  ClaimReceipt: 5,
+  CloseExpiredReceipt: 6,
+  MintTo: 7,
+} as const;
+
+export type Token2022ReceiveInstruction = (typeof Token2022ReceiveInstruction)[keyof typeof Token2022ReceiveInstruction];
 
 export function identifyToken2022ReceiveInstruction(
   instruction: { data: ReadonlyUint8Array } | ReadonlyUint8Array,
@@ -114,27 +116,27 @@ export type ParsedToken2022ReceiveInstruction<
   TProgram extends string = 'GyrTVV4hbcuzJuSz86FNq7K2UVAoSJQtcgHTVTz1hPPq',
 > =
   | ({
-      instructionType: Token2022ReceiveInstruction.InitializeMint2;
+      instructionType: typeof Token2022ReceiveInstruction.InitializeMint2;
     } & ParsedInitializeMint2Instruction<TProgram>)
   | ({
-      instructionType: Token2022ReceiveInstruction.InitializeAccount3;
+      instructionType: typeof Token2022ReceiveInstruction.InitializeAccount3;
     } & ParsedInitializeAccount3Instruction<TProgram>)
   | ({
-      instructionType: Token2022ReceiveInstruction.InitializeReceivePolicy;
+      instructionType: typeof Token2022ReceiveInstruction.InitializeReceivePolicy;
     } & ParsedInitializeReceivePolicyInstruction<TProgram>)
   | ({
-      instructionType: Token2022ReceiveInstruction.EnsureGuard;
+      instructionType: typeof Token2022ReceiveInstruction.EnsureGuard;
     } & ParsedEnsureGuardInstruction<TProgram>)
   | ({
-      instructionType: Token2022ReceiveInstruction.TransferChecked;
+      instructionType: typeof Token2022ReceiveInstruction.TransferChecked;
     } & ParsedTransferCheckedInstruction<TProgram>)
   | ({
-      instructionType: Token2022ReceiveInstruction.ClaimReceipt;
+      instructionType: typeof Token2022ReceiveInstruction.ClaimReceipt;
     } & ParsedClaimReceiptInstruction<TProgram>)
   | ({
-      instructionType: Token2022ReceiveInstruction.CloseExpiredReceipt;
+      instructionType: typeof Token2022ReceiveInstruction.CloseExpiredReceipt;
     } & ParsedCloseExpiredReceiptInstruction<TProgram>)
-  | ({ instructionType: Token2022ReceiveInstruction.MintTo } & ParsedMintToInstruction<TProgram>);
+  | ({ instructionType: typeof Token2022ReceiveInstruction.MintTo } & ParsedMintToInstruction<TProgram>);
 
 export function parseToken2022ReceiveInstruction<TProgram extends string>(
   instruction: Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array>,
@@ -249,11 +251,11 @@ export type Token2022ReceivePluginRequirements = ClientWithTransactionPlanning &
   ClientWithTransactionSending;
 
 export function token2022ReceiveProgram() {
-  return <T extends Token2022ReceivePluginRequirements>(
+  return <T extends Token2022ReceivePluginRequirements,>(
     client: T,
   ): ExtendedClient<T, { token2022Receive: Token2022ReceivePlugin }> => {
     return extendClient(client, {
-      token2022Receive: <Token2022ReceivePlugin>{
+      token2022Receive: {
         instructions: {
           initializeMint2: input =>
             addSelfPlanAndSendFunctions(client, getInitializeMint2Instruction(input)),
@@ -278,7 +280,7 @@ export function token2022ReceiveProgram() {
         },
         identifyInstruction: identifyToken2022ReceiveInstruction,
         parseInstruction: parseToken2022ReceiveInstruction,
-      },
+      } as Token2022ReceivePlugin,
     });
   };
 }

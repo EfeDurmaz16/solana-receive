@@ -39,7 +39,7 @@ import {
   getAccountMetaFactory,
   type ResolvedInstructionAccount,
 } from '@solana/kit/program-client-core';
-import { TOKEN2022_RECEIVE_PROGRAM_ADDRESS } from '../programs';
+import { TOKEN2022_RECEIVE_PROGRAM_ADDRESS } from '../programs/index.ts';
 
 export const TRANSFER_CHECKED_DISCRIMINATOR = 4;
 
@@ -262,7 +262,7 @@ export function getTransferCheckedInstruction<
       getAccountMeta('receipt', accounts.receipt),
       getAccountMeta('bondPayer', accounts.bondPayer),
       getAccountMeta('systemProgram', accounts.systemProgram),
-    ].filter(<T>(x: T | undefined): x is T => x !== undefined),
+    ].filter(<T,>(x: T | undefined): x is T => x !== undefined),
     data: getTransferCheckedInstructionDataEncoder().encode(
       args as TransferCheckedInstructionDataArgs,
     ),

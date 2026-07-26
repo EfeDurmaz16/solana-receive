@@ -32,6 +32,10 @@ Trailing bytes after a complete body are rejected (`InvalidInstruction`).
 - **No policy / self-transfer:** 4 accounts — `source(w)`, `mint`, `destination(w)`, `authority(signer)`.
 - **Policy destination (non-self):** 9 accounts — above + `guard_token(w)`, `guard_state(w)`, `receipt(w)`, `bond_payer(signer,w)`, `system_program`.
 - Self-transfer is always the 4-account form even if the destination carries a policy (SPEC §8).
+- The five policy accounts are **positional and all-or-nothing**. The generated builder marks them
+  optional individually, so passing a subset shifts the rest into the wrong slots (a lone `receipt`
+  lands in the `guard_token` position). Pass all five or none. `transferCheckedAccounts` in the
+  client takes them as a single object for this reason.
 
 ### Other
 
@@ -39,8 +43,8 @@ Trailing bytes after a complete body are rejected (`InvalidInstruction`).
 | --- | --- |
 | `InitializeReceivePolicy` | `token_account(w)`, `owner(signer)` |
 | `EnsureGuard` | `payer(signer,w)`, `receiver`, `mint`, `guard_token(w)`, `guard_state(w)`, `system_program` |
-| `ClaimReceipt` | 7 — receipt, guard_token, guard_state, claim_destination, mint, claim_authority(signer), bond_dest |
-| `CloseExpiredReceipt` | 6 — receipt, guard_token, guard_state, source_owner_token, mint, bond_dest |
+| `ClaimReceipt` | 7 — `receipt(w)`, `guard_token(w)`, `guard_state(w)`, `claim_destination(w)`, `mint`, `claim_authority(signer)`, `bond_dest(w)` |
+| `CloseExpiredReceipt` | 6 — `receipt(w)`, `guard_token(w)`, `guard_state(w)`, `source_owner_token(w)`, `mint`, `bond_dest(w)` |
 
 ## PDAs
 
@@ -71,4 +75,4 @@ Return data is last-instruction scoped. Multi-ix consumers should also index the
 
 ## Errors
 
-`ProgramError::Custom(n)` discriminants are pinned in `tests/smoke.rs` through `UnsupportedStateVersion = 32`. Gaps at 0, 5, 12, 16 are retired; do not reuse.
+`ProgramError::Custom(n)` discriminants are pinned in `tests/smoke.rs` through `UnsupportedStateVersion = 32`. Gaps at 0, 5, 11, 12 and 16 are retired; do not reuse. (11 was `GuardAtCapacity`, dropped with the per-shard receipt cap.)

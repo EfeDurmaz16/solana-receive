@@ -33,7 +33,7 @@ import {
   getAccountMetaFactory,
   type ResolvedInstructionAccount,
 } from '@solana/kit/program-client-core';
-import { TOKEN2022_RECEIVE_PROGRAM_ADDRESS } from '../programs';
+import { TOKEN2022_RECEIVE_PROGRAM_ADDRESS } from '../programs/index.ts';
 
 export const INITIALIZE_ACCOUNT3_DISCRIMINATOR = 1;
 

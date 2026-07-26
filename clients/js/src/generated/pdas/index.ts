@@ -6,6 +6,6 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from './guardState';
-export * from './guardToken';
-export * from './receipt';
+export * from './guardState.ts';
+export * from './guardToken.ts';
+export * from './receipt.ts';

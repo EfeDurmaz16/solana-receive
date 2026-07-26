@@ -6,11 +6,11 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from './claimReceipt';
-export * from './closeExpiredReceipt';
-export * from './ensureGuard';
-export * from './initializeAccount3';
-export * from './initializeMint2';
-export * from './initializeReceivePolicy';
-export * from './mintTo';
-export * from './transferChecked';
+export * from './claimReceipt.ts';
+export * from './closeExpiredReceipt.ts';
+export * from './ensureGuard.ts';
+export * from './initializeAccount3.ts';
+export * from './initializeMint2.ts';
+export * from './initializeReceivePolicy.ts';
+export * from './mintTo.ts';
+export * from './transferChecked.ts';

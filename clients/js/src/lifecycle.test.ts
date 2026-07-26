@@ -32,6 +32,10 @@ import {
   RECEIPT_SIZE,
 } from "./index.ts";
 
+/** Compact signer/writable summary for an instruction's account list. */
+const roles = (ix: { accounts?: readonly { role: number }[] }) =>
+  (ix.accounts ?? []).map(a => `${a.role & 0b10 ? "s" : "-"}${a.role & 0b01 ? "w" : "-"}`);
+
 const pk = (fill: number): Address => getAddressDecoder().decode(new Uint8Array(32).fill(fill));
 
 test("generated builders cover credited → held → claim / expiry assembly", async () => {
@@ -99,6 +103,8 @@ test("generated builders cover credited → held → claim / expiry assembly", a
   });
   assert.equal(credited.accounts.length, 4);
   assert.equal(credited.data.length, 59);
+  // Roles decide whether a transaction can even be submitted, so pin them, not just the count.
+  assert.deepEqual(roles(credited), ["-w", "--", "-w", "s-"]);
 
   // 3b. Policy / held path: 9 accounts (same data layout).
   const held = getTransferCheckedInstruction({
@@ -119,14 +125,31 @@ test("generated builders cover credited → held → claim / expiry assembly", a
     maxRecoveryMode: UNLIMITED_HELD_LIMITS.maxRecoveryMode,
   });
   assert.equal(held.accounts.length, 9);
-  assert.deepEqual(
-    new Uint8Array(held.data),
-    encodeTransferChecked({
-      amount: 50n,
-      decimals: 6,
-      uniqueNonce: nonce,
-      limits: UNLIMITED_HELD_LIMITS,
-    }),
+  assert.deepEqual(roles(held), [
+    "-w", // source
+    "--", // mint
+    "-w", // destination
+    "s-", // authority
+    "-w", // guardToken
+    "-w", // guardState
+    "-w", // receipt
+    "sw", // bondPayer
+    "--", // systemProgram
+  ]);
+  // Concrete bytes, not a comparison against another caller of the same encoder: that would
+  // only prove the generated code agrees with itself. This vector matches wire_vectors.rs.
+  const heldHex = Array.from(new Uint8Array(held.data), b =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
+  assert.equal(
+    heldHex,
+    "04" +
+      "3200000000000000" + // amount 50
+      "06" + // decimals
+      "09".repeat(32) + // uniqueNonce
+      "ffffffffffffffff" + // maxBondLamports
+      "ffffffffffffffff" + // maxTtlSlots
+      "02", // maxRecoveryMode
   );
   assert.deepEqual(
     transferCheckedAccounts({
@@ -191,30 +214,64 @@ test("generated builders cover credited → held → claim / expiry assembly", a
   assert.equal(close.data[0], 6);
 });
 
-test("generated PDAs are stable for fixed seeds", async () => {
-  const receiver = pk(0xaa);
-  const mint = pk(0xbb);
-  const sourceOwner = pk(0xcc);
+test("generated PDAs agree with the hand-written seed definitions", async () => {
+  // Two independent descriptions of the same seeds: the generated finders come from the IDL,
+  // deriveGuardTokenAddress and friends from constants.ts. Comparing them catches a drift in
+  // either. Comparing a finder against itself, as this test used to, catches nothing.
+  const { getProgramDerivedAddress } = await import("@solana/kit");
+  const {
+    deriveGuardTokenAddress,
+    deriveGuardStateAddress,
+    deriveReceiptAddress,
+  } = await import("./pda.ts");
+
+  const receiverBytes = new Uint8Array(32).fill(0xaa);
+  const mintBytes = new Uint8Array(32).fill(0xbb);
+  const sourceOwnerBytes = new Uint8Array(32).fill(0xcc);
   const nonce = new Uint8Array(32).fill(1);
+  const receiver = getAddressDecoder().decode(receiverBytes);
+  const mint = getAddressDecoder().decode(mintBytes);
+  const sourceOwner = getAddressDecoder().decode(sourceOwnerBytes);
+  // The residual AddressApi is deliberately structural (plain strings) so it does not bind the
+  // client to a Kit version; adapt Kit's branded signature to it.
+  const api = {
+    getProgramDerivedAddress: (input: { programAddress: string; seeds: Uint8Array[] }) =>
+      getProgramDerivedAddress({
+        programAddress: input.programAddress as Address,
+        seeds: input.seeds,
+      }),
+  };
 
-  const [gt1] = await findGuardTokenPda({ receiver, mint });
-  const [gt2] = await findGuardTokenPda({ receiver, mint });
-  assert.equal(gt1, gt2);
+  const [genGuard] = await findGuardTokenPda({ receiver, mint });
+  const [handGuard] = await deriveGuardTokenAddress(api, receiverBytes, mintBytes);
+  assert.equal(genGuard, handGuard);
 
-  const [gs] = await findGuardStatePda({ receiver, mint });
-  assert.notEqual(gt1, gs);
+  const [genState] = await findGuardStatePda({ receiver, mint });
+  const [handState] = await deriveGuardStateAddress(api, receiverBytes, mintBytes);
+  assert.equal(genState, handState);
+  assert.notEqual(genGuard, genState);
 
-  const [r1] = await findReceiptPda({
+  const [genReceipt] = await findReceiptPda({
     receiver,
     mint,
     sourceOwner,
     uniqueNonce: nonce,
   });
-  const [r2] = await findReceiptPda({
+  const [handReceipt] = await deriveReceiptAddress(
+    api,
+    receiverBytes,
+    mintBytes,
+    sourceOwnerBytes,
+    nonce,
+  );
+  assert.equal(genReceipt, handReceipt);
+
+  // The nonce must actually participate, or every hold would collide on one receipt address.
+  const [other] = await findReceiptPda({
     receiver,
     mint,
     sourceOwner,
-    uniqueNonce: nonce,
+    uniqueNonce: new Uint8Array(32).fill(2),
   });
-  assert.equal(r1, r2);
+  assert.notEqual(genReceipt, other);
 });

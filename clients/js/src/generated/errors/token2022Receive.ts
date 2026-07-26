@@ -12,7 +12,7 @@ import {
   type SOLANA_ERROR__INSTRUCTION_ERROR__CUSTOM,
   type SolanaError,
 } from '@solana/kit';
-import { TOKEN2022_RECEIVE_PROGRAM_ADDRESS } from '../programs';
+import { TOKEN2022_RECEIVE_PROGRAM_ADDRESS } from '../programs/index.ts';
 
 /** InsufficientFunds */
 export const TOKEN2022_RECEIVE_ERROR__INSUFFICIENT_FUNDS = 0x1; // 1
