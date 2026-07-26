@@ -520,9 +520,15 @@ async function main() {
   ]);
 
   const guardAfterExpiryHold = await tokenAmount(guardToken);
+  const sourceAfterExpiryHold = await tokenAmount(source.address);
   if (guardAfterExpiryHold !== guardBeforeExpiryHold + 1n) {
     throw new Error(
       `expiry hold: guard want ${guardBeforeExpiryHold + 1n} got ${guardAfterExpiryHold}`,
+    );
+  }
+  if (sourceAfterExpiryHold !== sourceBeforeExpiryHold - 1n) {
+    throw new Error(
+      `expiry hold: source want ${sourceBeforeExpiryHold - 1n} got ${sourceAfterExpiryHold}`,
     );
   }
 

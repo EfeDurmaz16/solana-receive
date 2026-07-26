@@ -61,13 +61,47 @@ if ! command -v surfpool >/dev/null 2>&1; then
   exit 1
 fi
 
-VERSION_LINE="$(surfpool --version 2>/dev/null || true)"
+VERSION_LINE="$(surfpool --version 2>/dev/null | head -n1 | tr -d '\r')"
 echo "surfpool: ${VERSION_LINE}"
-if [[ "${VERSION_LINE}" != *"${SURFPOOL_PIN}"* ]]; then
-  echo "error: expected Surfpool v${SURFPOOL_PIN}, got: ${VERSION_LINE}"
+# Exact match only (substring would accept "surfpool 11.5.0" for pin 1.5.0).
+if [[ "${VERSION_LINE}" != "surfpool ${SURFPOOL_PIN}" ]]; then
+  echo "error: expected exact 'surfpool ${SURFPOOL_PIN}', got: '${VERSION_LINE}'"
   echo "Install the pin from https://github.com/solana-foundation/surfpool/releases/tag/v${SURFPOOL_PIN}"
   exit 1
 fi
+
+# True when the TCP listener on RPC_PORT is our Surfpool child (or a descendant).
+rpc_listener_is_ours() {
+  local listen_pid=""
+  listen_pid="$(lsof -nP -iTCP:"${RPC_PORT}" -sTCP:LISTEN -t 2>/dev/null | head -n1 || true)"
+  if [[ -z "${listen_pid}" ]]; then
+    return 1
+  fi
+  local p="${listen_pid}"
+  local i=0
+  while [[ -n "${p}" && "${p}" != "0" && "${p}" != "1" && "${i}" -lt 16 ]]; do
+    if [[ "${p}" == "${SURFPOOL_PID}" ]]; then
+      return 0
+    fi
+    p="$(ps -o ppid= -p "${p}" 2>/dev/null | tr -d ' ' || true)"
+    i=$((i + 1))
+  done
+  return 1
+}
+
+# Surfpool-only cheatcode; ordinary solana-test-validator / foreign RPC returns method-not-found.
+# Pause then immediately resume so we do not freeze the simnet for deploy/lifecycle.
+rpc_is_surfpool() {
+  local pause_body resume_body
+  pause_body="$(curl -sf "$RPC_URL" -H 'content-type: application/json' \
+    -d '{"jsonrpc":"2.0","id":1,"method":"surfnet_pauseClock","params":[]}' 2>/dev/null || true)"
+  if [[ "${pause_body}" != *"\"result\""* ]]; then
+    return 1
+  fi
+  resume_body="$(curl -sf "$RPC_URL" -H 'content-type: application/json' \
+    -d '{"jsonrpc":"2.0","id":2,"method":"surfnet_resumeClock","params":[]}' 2>/dev/null || true)"
+  [[ "${resume_body}" == *"\"result\""* ]]
+}
 
 echo "[1/5] Building SBF .so"
 cargo build-sbf --manifest-path program/token-2022-receive/Cargo.toml
@@ -103,15 +137,15 @@ for i in $(seq 1 60); do
     tail -40 /tmp/solana-receive-surfpool.log
     exit 1
   fi
-  if curl -sf "$RPC_URL" -H 'content-type: application/json' \
-    -d '{"jsonrpc":"2.0","id":1,"method":"getHealth","params":[]}' >/dev/null 2>&1 \
-    || curl -sf "$RPC_URL" -H 'content-type: application/json' \
-    -d '{"jsonrpc":"2.0","id":1,"method":"getVersion","params":[]}' >/dev/null 2>&1; then
-    echo "    rpc ready at $RPC_URL (pid ${SURFPOOL_PID})"
+  # Bind ownership + Surfpool fingerprint: reject a foreign process answering on this port
+  # even while our child PID is still alive (failed bind / race).
+  if rpc_listener_is_ours && rpc_is_surfpool; then
+    echo "    rpc ready at $RPC_URL (pid ${SURFPOOL_PID}, listener owned + surfnet cheatcode ok)"
     break
   fi
   if [[ "$i" -eq 60 ]]; then
-    echo "error: rpc not ready; see /tmp/solana-receive-surfpool.log"
+    echo "error: rpc not ready as our Surfpool; see /tmp/solana-receive-surfpool.log"
+    echo "    tip: another process may already own port ${RPC_PORT}"
     tail -40 /tmp/solana-receive-surfpool.log
     exit 1
   fi
