@@ -137,8 +137,11 @@ pub fn process_transfer_checked(
     };
 
     if source_info.key == destination_info.key {
-        // Nothing moves, but this is a success path and must report an outcome like the
-        // others: integrators are told to read the byte rather than trust tx success.
+        // Self-transfer is a validated no-op, matching SPL Token: everything above has already
+        // been checked, and moving a balance onto itself changes nothing. It deliberately does
+        // not evaluate the policy or consume the policy accounts, because there is no value to
+        // divert; SPEC section 8 records the exception. It still reports an outcome, since
+        // integrators are told to read that rather than trust transaction success.
         return credited();
     }
 
@@ -332,8 +335,11 @@ fn move_amount(
     amount: u64,
     via_delegate: bool,
 ) -> ProgramResult {
-    // Aliased source/destination would debit and credit the same buffer in two separate
-    // borrows and cancel to a silent no-op, which callers read as "the tokens moved".
+    // Unreachable by construction: the only two call sites are guarded, one by the
+    // self-transfer short-circuit above and one by the check that refuses a guard as a transfer
+    // endpoint. Kept as a backstop because the failure it prevents is silent - aliased accounts
+    // debit and credit the same buffer in two separate borrows, cancelling to a no-op that the
+    // caller reads as "the tokens moved".
     if source_info.key == dest_info.key {
         return Err(ReceiveTokenError::SelfTransferForbidden.into());
     }

@@ -7,8 +7,10 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # Pinned so a toolchain bump is a visible diff rather than a surprise red build.
-  SOLANA_VERSION: "2.2.12"
+  # Pinned to the toolchain docs/VERIFICATION.md records the measurements against. It must be
+  # new enough that the cargo bundled with platform-tools can parse edition2024 manifests, which
+  # transitive dependencies in Cargo.lock now use; 2.2.x ships cargo 1.84 and cannot.
+  SOLANA_VERSION: "4.1.1"
 
 jobs:
   program:
@@ -29,6 +31,7 @@ jobs:
           key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
 
       - run: cargo fmt --all -- --check
+      - run: cargo metadata --locked --format-version 1 > /dev/null
 
       # The lib is the deployed artifact and is kept warning-clean. Test code is allowed
       # arity warnings on builders, so it is linted without -D.
@@ -41,9 +44,10 @@ jobs:
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
 
       # LiteSVM suites load target/deploy/token_2022_receive.so, so this must come first.
-      - run: cargo build-sbf --manifest-path program/token-2022-receive/Cargo.toml
+      # --locked: build the committed dependency graph, not whatever resolves today.
+      - run: cargo build-sbf --manifest-path program/token-2022-receive/Cargo.toml -- --locked
 
-      - run: cargo test -p token-2022-receive --no-fail-fast
+      - run: cargo test -p token-2022-receive --locked --no-fail-fast
 
       - name: Compute budget report
         run: cargo test -p token-2022-receive --test cu_ceilings -- --nocapture

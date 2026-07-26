@@ -281,6 +281,28 @@ pub fn process_ensure_guard(program_id: &Pubkey, accounts: &[AccountInfo]) -> Pr
         };
         let mut gdata = guard_token.try_borrow_mut_data()?;
         pack_account(&account, &mut gdata)?;
+    } else {
+        // An existing vault is repaired, not skipped. EnsureGuard used to only write these
+        // fields when it created the account, so a vault created by an earlier build kept the
+        // receiver as its token-level owner and carried no shard marker: still drainable
+        // through the ordinary transfer path, and invisible to is_guard_token_account. Both
+        // values are fixed by the PDA seeds, so this cannot be steered by a caller, and the
+        // balance is left untouched.
+        let mut gdata = guard_token.try_borrow_mut_data()?;
+        let mut existing = unpack_account(&gdata)?;
+        if existing.mint != *mint.key {
+            return Err(ReceiveTokenError::MintMismatch.into());
+        }
+        let stale = existing.owner != *guard_state.key
+            || existing.close_authority != COption::Some(*receiver.key)
+            || existing.delegate != COption::None;
+        if stale {
+            existing.owner = *guard_state.key;
+            existing.close_authority = COption::Some(*receiver.key);
+            existing.delegate = COption::None;
+            existing.delegated_amount = 0;
+            pack_account(&existing, &mut gdata)?;
+        }
     }
 
     let _ = assert_guard_token_pda(guard_token, receiver.key, mint.key, program_id)?;

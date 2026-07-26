@@ -538,3 +538,158 @@ fn held_log_carries_the_receipt_so_an_indexer_can_find_it() {
         "the held log must name the receipt account: {logs}"
     );
 }
+
+#[test]
+fn ensure_guard_repairs_a_vault_it_did_not_create() {
+    // EnsureGuard used to write the owner and the shard marker only on the create path, so a
+    // vault left behind by an earlier build stayed receiver-owned and unmarked: drainable
+    // through the ordinary transfer path and invisible to is_guard_token_account. Running it
+    // again must converge on the correct shape rather than skip.
+    let mut fx = Fixture::boot(1_000).with_policy_dest(100);
+    let held = hold_99(&mut fx, [121u8; 32]);
+    let (guard_state, _) =
+        derive_guard_state_address(&fx.dest_owner.pubkey(), &fx.mint.pubkey(), &fx.program_id);
+
+    // Simulate the legacy shape: receiver as token-level owner, no marker.
+    let mut acct = fx.svm.get_account(&held.guard_token).expect("guard");
+    let mut legacy = unpack_account(&acct.data).expect("unpack");
+    legacy.owner = fx.dest_owner.pubkey();
+    legacy.close_authority = solana_sdk::program_option::COption::None;
+    token_2022_receive::extension::tlv::pack_account(&legacy, &mut acct.data).unwrap();
+    fx.svm.set_account(held.guard_token, acct).unwrap();
+    fx.svm.expire_blockhash();
+
+    // The hole this reopens: a plain transfer out of the vault by the receiver.
+    let loot = fx.create_token_account(&fx.dest_owner.pubkey());
+    fx.svm.expire_blockhash();
+    send(
+        &mut fx.svm,
+        &fx.payer,
+        &[&fx.dest_owner],
+        vec![transfer_checked(
+            &fx.program_id,
+            &held.guard_token,
+            &fx.mint.pubkey(),
+            &loot.pubkey(),
+            &fx.dest_owner.pubkey(),
+            99,
+            6,
+            [0u8; 32],
+            HeldLimits::unlimited(),
+            None,
+        )],
+    )
+    .expect("precondition: the legacy shape really is drainable");
+    assert_eq!(token_amount(&fx.svm, &loot.pubkey()), 99);
+    fx.svm.expire_blockhash();
+
+    // Put the balance back and repair the vault.
+    let mut acct = fx.svm.get_account(&held.guard_token).expect("guard");
+    let mut restored = unpack_account(&acct.data).expect("unpack");
+    restored.amount = 99;
+    token_2022_receive::extension::tlv::pack_account(&restored, &mut acct.data).unwrap();
+    fx.svm.set_account(held.guard_token, acct).unwrap();
+    fx.svm.expire_blockhash();
+
+    send(
+        &mut fx.svm,
+        &fx.payer,
+        &[],
+        vec![token_2022_receive::instruction::ensure_guard(
+            &fx.program_id,
+            &fx.payer.pubkey(),
+            &fx.dest_owner.pubkey(),
+            &fx.mint.pubkey(),
+            &held.guard_token,
+            &guard_state,
+        )],
+    )
+    .expect("ensure_guard must repair, not skip");
+    fx.svm.expire_blockhash();
+
+    let repaired = unpack_account(&fx.svm.get_account(&held.guard_token).unwrap().data).unwrap();
+    assert_eq!(repaired.owner, guard_state, "authority moved to the PDA");
+    assert_eq!(
+        repaired.close_authority,
+        solana_sdk::program_option::COption::Some(fx.dest_owner.pubkey()),
+        "shard marker restored"
+    );
+    assert_eq!(repaired.amount, 99, "balance untouched");
+
+    // And the hole is closed again.
+    send(
+        &mut fx.svm,
+        &fx.payer,
+        &[&fx.dest_owner],
+        vec![transfer_checked(
+            &fx.program_id,
+            &held.guard_token,
+            &fx.mint.pubkey(),
+            &loot.pubkey(),
+            &fx.dest_owner.pubkey(),
+            99,
+            6,
+            [0u8; 32],
+            HeldLimits::unlimited(),
+            None,
+        )],
+    )
+    .expect_err("repaired vault is no longer spendable by the receiver");
+}
+
+#[test]
+fn self_transfer_to_a_policy_account_is_a_validated_no_op() {
+    // Matches SPL Token: everything is checked (including the balance), then nothing moves. Pinned because it is the one
+    // documented exception to "a policy destination requires 9 accounts" (SPEC section 8), and
+    // because it must still report an outcome.
+    let mut fx = Fixture::boot(1_000).with_policy_dest(100);
+    // Self-transfer is still fully validated, so the account needs the balance it moves.
+    send(
+        &mut fx.svm,
+        &fx.payer,
+        &[&fx.mint_authority],
+        vec![token_2022_receive::instruction::mint_to(
+            &fx.program_id,
+            &fx.mint.pubkey(),
+            &fx.dest.pubkey(),
+            &fx.mint_authority.pubkey(),
+            99,
+        )],
+    )
+    .expect("fund dest");
+    fx.svm.expire_blockhash();
+
+    // dest carries a policy that would reject 99, yet this succeeds with the 4-account form.
+    let meta = send(
+        &mut fx.svm,
+        &fx.payer,
+        &[&fx.dest_owner],
+        vec![transfer_checked(
+            &fx.program_id,
+            &fx.dest.pubkey(),
+            &fx.mint.pubkey(),
+            &fx.dest.pubkey(),
+            &fx.dest_owner.pubkey(),
+            99,
+            6,
+            [0u8; 32],
+            HeldLimits::unlimited(),
+            None,
+        )],
+    )
+    .expect("self-transfer is a no-op success");
+
+    assert_eq!(meta.return_data.data[0], 0, "reports credited");
+    assert_eq!(
+        token_amount(&fx.svm, &fx.dest.pubkey()),
+        99,
+        "balance unchanged"
+    );
+    let (guard_token, _) =
+        derive_guard_token_address(&fx.dest_owner.pubkey(), &fx.mint.pubkey(), &fx.program_id);
+    assert_eq!(
+        token_amount(&fx.svm, &guard_token),
+        0,
+        "and nothing was held"
+    );
+}

@@ -190,6 +190,11 @@ When destination has ReceivePolicy, `TransferChecked` requires **9** accounts:
 
 `ClaimReceipt` = 7 accounts; `CloseExpiredReceipt` = 6.
 
+**Exception.** A transfer whose source and destination are the same account is a validated no-op,
+matching SPL Token. It takes the 4-account form even when the destination carries a policy, does
+not evaluate the policy, and reports `credited`: no balance changes, so there is nothing to
+divert and nothing to hold.
+
 ## 9. Compatibility (v0 reference)
 
 | Feature | Status |
