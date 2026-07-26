@@ -3,7 +3,7 @@ import {
   guardTokenSeeds,
   receiptSeeds,
   PROGRAM_ID,
-} from "./constants.js";
+} from "./constants.ts";
 
 export type AddressApi = {
   getProgramDerivedAddress: (input: {

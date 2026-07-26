@@ -11,6 +11,10 @@ How to reproduce host and on-VM evidence for `token-2022-receive`.
 | Smoke | `cargo test -p token-2022-receive --test smoke` | Policy/TLV/PDA unit checks |
 | Guard custody | `cargo build-sbf` then `cargo test -p token-2022-receive --test guard_custody` | Held funds unspendable by the receiver; outcome return data |
 | Policy bounds | `cargo build-sbf` then `cargo test -p token-2022-receive --test policy_bounds` | Write-once policy; mode validation; bond/TTL caps |
+| Pre-funded PDAs | `cargo build-sbf` then `cargo test -p token-2022-receive --test prefunded_pdas` | Dust on a guard or receipt address cannot brick creation |
+| Claim authority | `cargo build-sbf` then `cargo test -p token-2022-receive --test claim_authority` | All three recovery modes; unsigned authority; guard aliasing |
+| Wire vectors | `cargo test -p token-2022-receive --test wire_vectors` | Byte vectors shared with the JS client |
+| JS client | `cd clients/js && npm run typecheck && npm test` | Encoder vectors, pubkey length checks, account roles |
 | Host verify | `cargo test -p token-2022-receive --test verify_no_policy --test verify_policy_transfer --test verify_receipt_lifecycle` | Stateful AccountInfo + syscall stubs |
 | Golden vectors | `cargo test -p token-2022-receive --test golden_vectors` | sRFC §9 IDs `V-NP`…`V-AU` + nonce contract |
 | Upstream differential | `cargo test -p token-2022-receive --test upstream_differential` | Layout + no-policy overlap (not TokenzQd) |
@@ -84,6 +88,12 @@ Distinct `(receiver, mint)` shards use distinct writable guard PDAs (no shared g
 | Guard custody not spendable by receiver | `guard_custody` (LiteSVM, real SBF) |
 | Policy write-once / mode validation / bond + TTL caps | `policy_bounds` (LiteSVM, real SBF) |
 | Malformed / short TLV fails closed | `smoke` |
+| Pre-funded guard / receipt PDAs | `prefunded_pdas` (LiteSVM, real SBF) |
+| Receiver / ThirdParty recovery modes, unsigned authority | `claim_authority` (LiteSVM, real SBF) |
+| Guard aliased as its own payout | `claim_authority` |
+| Zero-amount hold rejected | `guard_custody` |
+| Non-canonical instruction encodings rejected | `smoke` |
+| Client/program wire agreement | `wire_vectors` + `clients/js/src/index.test.ts` |
 
 Error codes are explicit and stable (`ReceiveTokenError` discriminants); retired variants
 leave documented gaps rather than renumbering live codes.
@@ -117,4 +127,7 @@ Use when exercising RPC / Kit demos. For program semantics + CU, LiteSVM is enou
 3. Surfpool + Kit client demo once CLI is installed.
 4. Shard-fill griefing cost (filling `MAX_OPEN_RECEIPTS` denies further held delivery until
    receipts expire; see SPEC §10 residual risks).
-5. JS client has no test suite and is not exercised in CI; there is no CI workflow in-tree.
+5. No CI workflow in-tree; both suites are run manually.
+6. `GuardState` tracks an open-receipt count but not a held total, so
+   `guard_token.amount >= sum(open receipts)` holds by construction rather than by assertion,
+   and tokens sent directly into a guard are unattributed (see SPEC section 10 residual risks).

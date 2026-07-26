@@ -179,7 +179,7 @@ destination owner is hostile.
 | --- | --- |
 | A hostile destination can still *route* an ordinary transfer into held custody by setting an unsatisfiable policy. Recovery is guaranteed (claim or expiry, both bounded), but the sender's funds are delayed, and under `Receiver` / `ThirdParty` recovery the destination decides who claims. **Senders must read the outcome byte, not just transaction success.** | By design; bounded by the TTL cap |
 | Shard capacity is a shared permissionless resource: filling `MAX_OPEN_RECEIPTS` on a `(receiver, mint)` shard costs only refundable bond and denies further *held* delivery until receipts expire. Credited transfers are unaffected and the failure is closed. | Accepted for v0 |
-| Guard-token dust sent directly to the guard PDA is unattributed and unrecoverable. | Accepted for v0 |
+| Guard-token dust sent directly to the guard PDA is unattributed and unrecoverable. `GuardState` counts open receipts but not a held total, so `guard_token.amount >= sum(open receipt amounts)` holds by construction rather than by on-chain assertion. Adding a held total plus a sweep path is the obvious v1 change. | Accepted for v0 |
 
 ## 11. Proposal path
 

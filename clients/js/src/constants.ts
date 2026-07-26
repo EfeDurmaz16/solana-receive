@@ -3,6 +3,9 @@ export const PROGRAM_ID =
 
 export const MAX_OPEN_RECEIPTS = 64;
 export const DEFAULT_RECEIPT_TTL_SLOTS = 1_512_000;
+/** Protocol ceilings, enforced on-chain at InitializeReceivePolicy. */
+export const MAX_RECEIPT_TTL_SLOTS = 6_480_000;
+export const MAX_RECEIPT_BOND_LAMPORTS = 1_000_000_000;
 export const ALLOWLIST_CAP = 8;
 
 export const SEEDS = {
