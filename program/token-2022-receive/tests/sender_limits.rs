@@ -10,6 +10,7 @@ mod litesvm_helpers;
 
 use litesvm_helpers::{send, token_amount, Fixture};
 use solana_sdk::signature::Signer;
+use token_2022_receive::error::ReceiveTokenError;
 use token_2022_receive::guard::{derive_guard_state_address, derive_guard_token_address};
 use token_2022_receive::instruction::{transfer_checked, HeldLimits, PolicyTransferAccounts};
 use token_2022_receive::receipt::derive_receipt_address;
@@ -57,6 +58,90 @@ fn attempt(
     r
 }
 
+fn err_code(e: &litesvm::types::FailedTransactionMetadata) -> Option<u32> {
+    match e.err {
+        solana_sdk::transaction::TransactionError::InstructionError(
+            _,
+            solana_sdk::instruction::InstructionError::Custom(c),
+        ) => Some(c),
+        _ => None,
+    }
+}
+
+fn create_policy_dest_with_recovery(
+    fx: &mut Fixture,
+    owner: &solana_sdk::signature::Keypair,
+    recovery_authority_mode: u8,
+    recovery_authority: solana_sdk::pubkey::Pubkey,
+) -> solana_sdk::signature::Keypair {
+    let space = token_2022_receive::extension::tlv::account_len_with_receive_policy();
+    let rent = fx.svm.minimum_balance_for_rent_exemption(space);
+    let dest = solana_sdk::signature::Keypair::new();
+    send(
+        &mut fx.svm,
+        &fx.payer,
+        &[&dest],
+        vec![solana_sdk::system_instruction::create_account(
+            &fx.payer.pubkey(),
+            &dest.pubkey(),
+            rent,
+            space as u64,
+            &fx.program_id,
+        )],
+    )
+    .expect("create dest");
+    send(
+        &mut fx.svm,
+        &fx.payer,
+        &[],
+        vec![token_2022_receive::instruction::initialize_account3(
+            &fx.program_id,
+            &dest.pubkey(),
+            &fx.mint.pubkey(),
+            &owner.pubkey(),
+        )],
+    )
+    .expect("init dest");
+    send(
+        &mut fx.svm,
+        &fx.payer,
+        &[owner],
+        vec![token_2022_receive::instruction::initialize_receive_policy(
+            &fx.program_id,
+            &dest.pubkey(),
+            &owner.pubkey(),
+            100,
+            token_2022_receive::extension::receive_policy::SourceOwnerMode::AllowAll as u8,
+            recovery_authority_mode,
+            recovery_authority,
+            0,
+            token_2022_receive::constants::DEFAULT_RECEIPT_TTL_SLOTS,
+            vec![],
+        )],
+    )
+    .expect("init policy");
+    let (guard_token, _) =
+        derive_guard_token_address(&owner.pubkey(), &fx.mint.pubkey(), &fx.program_id);
+    let (guard_state, _) =
+        derive_guard_state_address(&owner.pubkey(), &fx.mint.pubkey(), &fx.program_id);
+    send(
+        &mut fx.svm,
+        &fx.payer,
+        &[],
+        vec![token_2022_receive::instruction::ensure_guard(
+            &fx.program_id,
+            &fx.payer.pubkey(),
+            &owner.pubkey(),
+            &fx.mint.pubkey(),
+            &guard_token,
+            &guard_state,
+        )],
+    )
+    .expect("ensure guard");
+    fx.svm.expire_blockhash();
+    dest
+}
+
 #[test]
 fn a_sender_can_refuse_held_delivery_outright() {
     let mut fx = Fixture::boot(1_000).with_policy_dest(100);
@@ -78,7 +163,7 @@ fn a_sender_can_cap_the_bond_it_will_fund() {
 
     // with_policy_dest sets receipt_bond_lamports = 1_000_000, and the bond is at least the
     // receipt's rent, so a 1 lamport ceiling must refuse.
-    attempt(
+    let err = attempt(
         &mut fx,
         HeldLimits {
             max_bond_lamports: 1,
@@ -87,6 +172,10 @@ fn a_sender_can_cap_the_bond_it_will_fund() {
         [92u8; 32],
     )
     .expect_err("a bond above the sender's ceiling must be refused");
+    assert_eq!(
+        err_code(&err),
+        Some(ReceiveTokenError::BondAboveSenderLimit as u32)
+    );
 
     attempt(&mut fx, HeldLimits::unlimited(), [93u8; 32])
         .expect("the same transfer succeeds without a ceiling");
@@ -97,7 +186,7 @@ fn a_sender_can_cap_how_long_its_funds_are_locked() {
     let mut fx = Fixture::boot(1_000).with_policy_dest(100);
 
     // The fixture policy uses the 7-day default TTL.
-    attempt(
+    let err = attempt(
         &mut fx,
         HeldLimits {
             max_ttl_slots: 1_000,
@@ -106,6 +195,10 @@ fn a_sender_can_cap_how_long_its_funds_are_locked() {
         [94u8; 32],
     )
     .expect_err("a TTL above the sender's ceiling must be refused");
+    assert_eq!(
+        err_code(&err),
+        Some(ReceiveTokenError::TtlAboveSenderLimit as u32)
+    );
 
     attempt(
         &mut fx,
@@ -289,11 +382,71 @@ fn a_sender_refuses_a_policy_that_hands_recovery_to_the_receiver() {
     };
     let _ = receipt;
 
-    attempt_with(&mut fx, HeldLimits::originator_recovery_only(), nonce)
+    let err = attempt_with(&mut fx, HeldLimits::originator_recovery_only(), nonce)
         .expect_err("a sender must be able to refuse handing recovery to the receiver");
+    assert_eq!(
+        err_code(&err),
+        Some(ReceiveTokenError::RecoveryModeAboveSenderLimit as u32)
+    );
     attempt_with(&mut fx, HeldLimits::unlimited(), [99u8; 32])
         .expect("the same transfer is accepted by a sender that allows it");
     assert_eq!(token_amount(&fx.svm, &guard_token), 99);
+}
+
+#[test]
+fn a_sender_refuses_a_policy_that_hands_recovery_to_a_third_party() {
+    let mut fx = Fixture::boot(1_000);
+    let owner = fx.dest_owner.insecure_clone();
+    let recovery_authority = solana_sdk::signature::Keypair::new();
+    let dest = create_policy_dest_with_recovery(
+        &mut fx,
+        &owner,
+        token_2022_receive::extension::receive_policy::RecoveryAuthorityMode::ThirdParty as u8,
+        recovery_authority.pubkey(),
+    );
+    let (guard_token, _) =
+        derive_guard_token_address(&owner.pubkey(), &fx.mint.pubkey(), &fx.program_id);
+    let (guard_state, _) =
+        derive_guard_state_address(&owner.pubkey(), &fx.mint.pubkey(), &fx.program_id);
+    let nonce = [100u8; 32];
+    let (receipt, _) = derive_receipt_address(
+        &owner.pubkey(),
+        &fx.mint.pubkey(),
+        &fx.source_owner.pubkey(),
+        &nonce,
+        &fx.program_id,
+    );
+    let source_before = token_amount(&fx.svm, &fx.source.pubkey());
+
+    let err = send(
+        &mut fx.svm,
+        &fx.payer,
+        &[&fx.source_owner],
+        vec![transfer_checked(
+            &fx.program_id,
+            &fx.source.pubkey(),
+            &fx.mint.pubkey(),
+            &dest.pubkey(),
+            &fx.source_owner.pubkey(),
+            99,
+            6,
+            nonce,
+            HeldLimits::originator_recovery_only(),
+            Some(PolicyTransferAccounts {
+                guard_token,
+                guard_state,
+                receipt,
+                bond_payer: fx.payer.pubkey(),
+            }),
+        )],
+    )
+    .expect_err("a sender must be able to refuse third-party recovery");
+    assert_eq!(
+        err_code(&err),
+        Some(ReceiveTokenError::RecoveryModeAboveSenderLimit as u32)
+    );
+    assert_eq!(token_amount(&fx.svm, &fx.source.pubkey()), source_before);
+    assert_eq!(token_amount(&fx.svm, &guard_token), 0);
 }
 
 #[test]
