@@ -13,3 +13,4 @@ test-ledger/
 clients/js/node_modules/
 clients/js/dist/
 demos/receive/last-run.json
+scripts/demo-tools/

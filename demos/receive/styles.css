@@ -106,6 +106,20 @@ body {
   line-height: 1.45;
 }
 
+.step-value a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(37, 99, 255, 0.35);
+}
+
+.step-value a:hover {
+  border-bottom-color: var(--accent);
+}
+
+.path li[hidden] {
+  display: none;
+}
+
 .path li.is-live .step-label {
   color: var(--accent);
 }
