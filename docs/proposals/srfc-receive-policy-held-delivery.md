@@ -116,4 +116,4 @@ Run: `cargo test -p token-2022-receive --test golden_vectors --test upstream_dif
 
 ## 11. Canonical open questions
 
-See [`decision-request.md`](./decision-request.md): mint allow-flag; account-resolution shape; greenfield reference vs upstream fork; whether a SIMD is required. Reference defaults are locked in SPEC §4.
+See [`decision-request.md`](./decision-request.md): mint allow-flag; account-resolution shape; custom program ID reference vs upstream fork; whether a SIMD is required. Reference defaults are locked in SPEC §4.

@@ -48,8 +48,8 @@ cargo build-sbf --manifest-path program/token-2022-receive/Cargo.toml
 cargo test -p token-2022-receive --test litesvm_before_after -- --nocapture
 ```
 
-Artifact: `target/deploy/token_2022_receive.so`. Evidence: [docs/VERIFICATION.md](../../docs/VERIFICATION.md). Semantics: [docs/SPEC.md](../../docs/SPEC.md).
+Artifact: `target/deploy/token_2022_receive.so`. Evidence: [docs/VERIFICATION.md](../../docs/VERIFICATION.md). Operator path: [docs/OPERATOR.md](../../docs/OPERATOR.md). Semantics: [docs/SPEC.md](../../docs/SPEC.md). JS client: [clients/js](../../clients/js).
 
 ## Unsupported / deferred
 
-Full Token-2022 extension surface, Transfer Hook coexistence, Associated Token Program integration, full Kit/Codama SDK, mint allow-flag, confidential transfers.
+Full Token-2022 extension surface, Transfer Hook coexistence, Associated Token Program integration, mint allow-flag, confidential transfers.
