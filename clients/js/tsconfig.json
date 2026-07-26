@@ -8,8 +8,7 @@
     "noEmit": true,
     "declaration": true,
     "esModuleInterop": true,
-    "allowImportingTsExtensions": true,
-    "erasableSyntaxOnly": true
+    "allowImportingTsExtensions": true
   },
   "include": [
     "src/**/*"

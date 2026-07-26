@@ -45,7 +45,7 @@ receipt and could never be recovered.
 
 | | |
 | --- | --- |
-| In tree | Reference program, host + LiteSVM suites, golden vectors, draft sRFC |
+| In tree | Reference program, host + LiteSVM suites, golden vectors, Codama/Kit JS client |
 | Measured | CU ceilings + footprints under LiteSVM (see [docs/VERIFICATION.md](docs/VERIFICATION.md)) |
 | Not claimed | Canonical Token-2022, TokenzQd wire compatibility, legacy USDC interception, full upstream extension parity, mainnet product, any upgrade or migration path |
 
@@ -64,8 +64,10 @@ outcome reporting) and `policy_bounds` (write-once policy, mode validation, bond
 
 ```
 program/token-2022-receive/   # Reference program (custom program ID)
-clients/js/                   # Minimal instruction/PDA helpers
+clients/js/                   # Kit/Codama client (generated + residual helpers)
+idl/                          # Codama IDL (source for client codegen)
 docs/SPEC.md                  # Normative v0 semantics
+docs/WIRE.md                  # Frozen byte/account contract for codegen
 docs/VERIFICATION.md          # How to re-run evidence + measured CU
 docs/proposals/               # sRFC, decision request, maintainer note, SIMD gate
 scripts/                      # Optional Surfpool checklist

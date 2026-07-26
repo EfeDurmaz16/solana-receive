@@ -1,7 +1,13 @@
 /**
- * Minimal Kit-oriented helpers for the token-2022-receive reference program.
- * Not a full SDK — enough to derive PDAs and encode TransferChecked for local exercise.
+ * Client for the token-2022-receive reference program.
+ *
+ * Prefer the Codama-generated Kit builders under `./generated` (re-exported below).
+ * Residual helpers (`previewOutcome`, HeldLimits presets, legacy byte encoders) stay
+ * handwritten where the IDL cannot express preflight semantics.
  */
+
+/** Codama-generated Kit builders, PDAs, and typed errors. */
+export * from "./generated/index.ts";
 
 export {
   PROGRAM_ID,

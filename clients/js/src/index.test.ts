@@ -6,7 +6,7 @@
  * client silently builds instructions the program misreads, so both suites must be updated
  * together and neither may be changed alone.
  *
- *   node --experimental-strip-types --test src/index.test.ts
+ *   npm test   # tsx --test (Codama output uses TS enums; strip-types is not enough)
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -23,6 +23,7 @@ import {
   encodeU64LE,
   transferCheckedAccounts,
   TransferOutcome,
+  getTransferCheckedInstructionDataEncoder,
 } from "./index.ts";
 
 const hex = (b: Uint8Array) =>
@@ -342,4 +343,23 @@ test("decodeTransferOutcome distinguishes held from credited", () => {
   assert.equal(decodeTransferOutcome(new Uint8Array()), null);
   assert.equal(decodeTransferOutcome(null), null);
   assert.throws(() => decodeTransferOutcome(new Uint8Array([2])));
+});
+
+test("Codama TransferChecked encoder matches the handwritten wire vector", () => {
+  const nonce = Array.from(new Uint8Array(32).fill(9));
+  const handwritten = encodeTransferChecked({
+    amount: 1n,
+    decimals: 6,
+    uniqueNonce: new Uint8Array(nonce),
+    limits: UNLIMITED_HELD_LIMITS,
+  });
+  const generated = getTransferCheckedInstructionDataEncoder().encode({
+    amount: 1n,
+    decimals: 6,
+    uniqueNonce: nonce,
+    maxBondLamports: UNLIMITED_HELD_LIMITS.maxBondLamports,
+    maxTtlSlots: UNLIMITED_HELD_LIMITS.maxTtlSlots,
+    maxRecoveryMode: UNLIMITED_HELD_LIMITS.maxRecoveryMode,
+  });
+  assert.equal(hex(new Uint8Array(generated)), hex(handwritten));
 });
