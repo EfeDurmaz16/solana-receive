@@ -48,7 +48,7 @@ Same dust (`1`), same mint/source:
 
 | Case | Outcome | Dest | Guard | CU (range) | Ceiling |
 | --- | --- | --- | --- | --- | --- |
-| BEFORE - no policy | credited | `1` | n/a | **2667** | 10_000 |
+| BEFORE - no policy | credited | `1` | n/a | **2881** | 10_000 |
 | AFTER - policy, dust | held | `0` | `1` | **12.1k - 18.1k** | 50_000 |
 | AFTER - policy accepts `150` | credited | `150` | `0` | **7.1k - 13.1k** | 40_000 |
 | AFTER - metas missing | failed `Custom(10)` | `0` | - | **2069** | 10_000 |
