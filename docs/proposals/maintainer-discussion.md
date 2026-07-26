@@ -2,9 +2,20 @@
 
 **Audience:** Token-2022 maintainers  
 **Related:** [token-2022#124](https://github.com/solana-program/token-2022/issues/124)  
+**Repo:** https://github.com/EfeDurmaz16/solana-receive  
 **Draft:** [`srfc-receive-policy-held-delivery.md`](./srfc-receive-policy-held-delivery.md)  
 **Decisions:** [`decision-request.md`](./decision-request.md)  
-**Status:** Discussion starter — **not** a SIMD
+**Status:** Discussion starter — **not** a SIMD. **Do not post** until the posting checklist below is checked.
+
+---
+
+## Posting checklist (internal)
+
+- [ ] Phase 3 Surfpool demo merged or explicitly OK to cite from open PR #4
+- [ ] Short post re-read for non-claims (no TokenzQd wire, no USDC intercept, no mainnet product)
+- [ ] Links resolve (SPEC, VERIFICATION, repo)
+- [ ] Explicit user OK to post on #124 (or open a new thread)
+- [ ] Decide venue: comment on #124 vs new Discussion / issue
 
 ---
 
@@ -20,17 +31,25 @@ Design discussion adjacent to [#124 (account-side transfer hook)](https://github
 
 **What #124 explores.** Per-account hook programs that **approve or reject**. On disapproval, the transfer **halts**. Mint allow-flag and tx-size notes still apply.
 
-**What we propose (or alongside).** An opt-in destination-account receive-policy extension whose reject path is **held delivery**:
+**What we propose (or alongside).** An opt-in destination-account receive-policy whose reject path is **held delivery**:
 
 - Token-valid + policy reject → funds route **source → receiver-scoped guard**, receipt written, instruction **`Ok`**.
-- Outcomes: `failed` \| `credited` \| `held`.
+- Outcomes: `failed` | `credited` | `held`.
 - Custody sharded by `(receiver, mint)` — no global guard.
 - Receipts: bounded, bonded, TTL + permissionless close, full-claim only in v0.
 - Membership evaluates **source token-account owner**.
 
-Reference implementation: greenfield **custom program ID** (Token-2022-**shaped**, **not** wire-compatible with `TokenzQd` discriminators). Host + LiteSVM evidence and sRFC vectors are in the repo; see VERIFICATION.
+**Reference (greenfield custom program ID).** Token-2022-**shaped**, **not** wire-compatible with `TokenzQd` discriminators. In the repo today:
 
-We are **not** claiming legacy Tokenkeg USDC/USDT interception.
+- Normative behavior: `docs/SPEC.md`
+- Frozen wire for clients: `docs/WIRE.md`
+- Host + LiteSVM suites, golden vectors, CU ceilings: `docs/VERIFICATION.md`
+- Codama → Kit JS client (`clients/js`) for third-party assembly
+- Surfpool offline RPC lifecycle (credited → held → claim / expiry) via `./scripts/surfpool-lifecycle.sh` (landing with the Surfpool demo PR)
+
+Repo: https://github.com/EfeDurmaz16/solana-receive
+
+We are **not** claiming legacy Tokenkeg USDC/USDT interception, ambient policy on unmodified Token-2022, or a mainnet product.
 
 **Ask.**
 
@@ -41,7 +60,7 @@ We are **not** claiming legacy Tokenkeg USDC/USDT interception.
 
 **One-liner:** #124 ≈ account-side **revert hook**; this proposal ≈ account-side **non-reverting held delivery**.
 
-Decision checklist: [`decision-request.md`](./decision-request.md).
+Decision checklist: `docs/proposals/decision-request.md` in the repo.
 
 ---
 
@@ -50,5 +69,11 @@ Decision checklist: [`decision-request.md`](./decision-request.md).
 - Fail-closed metas: missing guard/receipt → `failed`, never silent bypass.
 - Why not mint Transfer Hook: wrong ownership; read-only; revert-only; no fund redirect.
 - Why not app vault as the answer: ATA path bypass.
+- CU (LiteSVM, not Surfpool): no-policy ~3k; policy credited ~7–16k; held ~13–22k; ceilings 40–50k. Held costs more (receipt + guard + PDA bump search); still under default budget. Point samples are not a performance claim.
 - Contention: per-`(receiver, mint)` guard shards; same shard serializes; LiteSVM does not measure multi-tx bank locks.
+- Client path: IDL → Codama → Kit; `previewOutcome` is advisory; chain return data / logs are authoritative for held vs credited.
 - Path: sRFC first; SIMD conditional on canonical scope ([simd-conditional-outline.md](./simd-conditional-outline.md)).
+
+## After responses
+
+Record answers against the four asks in [decision-request.md](./decision-request.md). Then choose: stay-custom / compose-on-#124 / rebase-toward-upstream / stop. Do not open a SIMD unless maintainers confirm canonical scope.

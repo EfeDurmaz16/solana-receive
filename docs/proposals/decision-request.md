@@ -2,7 +2,8 @@
 
 **Audience:** Token-2022 / runtime maintainers (and anyone reviewing this reference)  
 **Status:** One-page ask — not a SIMD  
-**Related:** [srfc-receive-policy-held-delivery.md](./srfc-receive-policy-held-delivery.md), [maintainer-discussion.md](./maintainer-discussion.md), [../SPEC.md](../SPEC.md)
+**Related:** [srfc-receive-policy-held-delivery.md](./srfc-receive-policy-held-delivery.md), [maintainer-discussion.md](./maintainer-discussion.md), [../SPEC.md](../SPEC.md)  
+**Repo:** https://github.com/EfeDurmaz16/solana-receive
 
 This repository is a **greenfield custom program ID reference** inspired by Token-2022 layouts and transfer semantics. It is **not** a drop-in `TokenzQd…` binary and is **not wire-compatible** with upstream instruction discriminators (see `upstream_differential`).
 
@@ -24,7 +25,7 @@ Please decide the four items below. Until they are settled, the working path rem
 
 ## 2. Account-resolution shape
 
-Policy-enabled `TransferChecked` uses **9** accounts (4 base + guard_token, guard_state, receipt, bond_payer, system_program). Missing metas → `failed`.
+Policy-enabled `TransferChecked` uses **9** accounts (4 base + guard_token, guard_state, receipt, bond_payer, system_program). Missing metas → `failed`. The five policy accounts are positional and all-or-nothing (see [WIRE.md](../WIRE.md)).
 
 | Option | Meaning |
 | --- | --- |
@@ -60,9 +61,20 @@ Policy-enabled `TransferChecked` uses **9** accounts (4 base + guard_token, guar
 
 ## Evidence already in-tree
 
-- Normative: [`../SPEC.md`](../SPEC.md)  
-- Measured CU / ceilings / footprints: [`../VERIFICATION.md`](../VERIFICATION.md)  
-- Executable vectors: `cargo test -p token-2022-receive --test golden_vectors`  
-- Layout overlap (not TokenzQd execution): `--test upstream_differential`  
+| Kind | Where |
+| --- | --- |
+| Normative semantics | [`../SPEC.md`](../SPEC.md) |
+| Frozen wire (tags, metas, PDAs, outcomes) | [`../WIRE.md`](../WIRE.md) |
+| CU ceilings, footprints, LiteSVM | [`../VERIFICATION.md`](../VERIFICATION.md) |
+| Golden / sRFC vectors | `cargo test -p token-2022-receive --test golden_vectors` |
+| Layout overlap (not TokenzQd execution) | `--test upstream_differential` |
+| Kit / Codama client | `clients/js` (generated builders + residual `previewOutcome`) |
+| Surfpool RPC lifecycle | `./scripts/surfpool-lifecycle.sh` (Phase 3 demo PR; cite once merged or with PR link) |
 
-**Non-claims:** not legacy Tokenkeg USDC/USDT interception; not ambient policy on unmodified Token-2022; not a performance guarantee from point CU samples.
+**Non-claims:** not legacy Tokenkeg USDC/USDT interception; not ambient policy on unmodified Token-2022; not TokenzQd wire compatibility; not a performance guarantee from point CU samples; not a mainnet product.
+
+## Response log (fill after posting)
+
+| Date | Venue | Ask 1 | Ask 2 | Ask 3 | Ask 4 | Next step |
+| --- | --- | --- | --- | --- | --- | --- |
+| | | | | | | |
