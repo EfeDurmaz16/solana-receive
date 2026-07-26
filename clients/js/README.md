@@ -61,7 +61,7 @@ import {
   RECEIPT_SIZE,
   findGuardTokenPda,
   findGuardStatePda,
-  findReceiptPda,
+  findReceiptPdaChecked,
   getInitializeReceivePolicyInstruction,
   getEnsureGuardInstruction,
   getTransferCheckedInstruction,
@@ -120,7 +120,8 @@ const outcome = previewOutcome({
 });
 
 const uniqueNonce = crypto.getRandomValues(new Uint8Array(32));
-const [receipt] = await findReceiptPda({
+// uniqueNonce must be exactly 32 bytes (checked helper; generated findReceiptPda soft-pads).
+const [receipt] = await findReceiptPdaChecked({
   receiver,
   mint,
   sourceOwner,
