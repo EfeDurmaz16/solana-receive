@@ -8,7 +8,7 @@ use crate::extension::tlv::{
 use crate::guard::{
     assert_guard_state_pda, assert_guard_token_pda, load_guard_state, GuardState, GUARD_STATE_SIZE,
 };
-use crate::processor::require_signer;
+use crate::processor::{create_pda_account, require_signer};
 use crate::receipt::{
     assert_receipt_pda, Receipt, ReceiptStatus, RECEIPT_DISCRIMINATOR, RECEIPT_SIZE,
 };
@@ -19,7 +19,7 @@ use solana_program::{
     clock::Clock,
     entrypoint::ProgramResult,
     msg,
-    program::invoke_signed,
+    program::invoke,
     program::set_return_data,
     program_error::ProgramError,
     program_option::COption,
@@ -196,21 +196,27 @@ pub fn process_transfer_checked(
             unique_nonce.as_ref(),
             &[receipt_bump],
         ];
-        invoke_signed(
-            &system_instruction::create_account(
-                bond_payer.key,
-                receipt_info.key,
-                bond,
-                RECEIPT_SIZE as u64,
-                program_id,
-            ),
-            &[
-                bond_payer.clone(),
-                receipt_info.clone(),
-                system_program.clone(),
-            ],
-            &[seeds],
+        create_pda_account(
+            bond_payer,
+            receipt_info,
+            system_program,
+            RECEIPT_SIZE,
+            program_id,
+            seeds,
         )?;
+        // create_pda_account funds to rent exemption; top up to the policy bond if it is higher.
+        if let Some(extra) = bond.checked_sub(receipt_info.lamports()) {
+            if extra > 0 {
+                invoke(
+                    &system_instruction::transfer(bond_payer.key, receipt_info.key, extra),
+                    &[
+                        bond_payer.clone(),
+                        receipt_info.clone(),
+                        system_program.clone(),
+                    ],
+                )?;
+            }
+        }
 
         {
             let mut rdata = receipt_info.try_borrow_mut_data()?;

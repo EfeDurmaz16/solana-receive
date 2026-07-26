@@ -11,20 +11,16 @@ use crate::guard::{
     assert_guard_state_pda, assert_guard_token_pda, derive_guard_state_address,
     derive_guard_token_address, GuardState, GUARD_STATE_SIZE,
 };
-use crate::processor::require_signer;
+use crate::processor::{create_pda_account, require_signer};
 use crate::state::{AccountState, Mint, TokenAccount, ACCOUNT_SIZE, MINT_SIZE};
 use bytemuck::from_bytes_mut;
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint::ProgramResult,
-    program::invoke_signed,
     program_error::ProgramError,
     program_option::COption,
     program_pack::Pack,
     pubkey::Pubkey,
-    rent::Rent,
-    system_instruction,
-    sysvar::Sysvar,
 };
 
 pub fn process_initialize_mint2(
@@ -206,26 +202,20 @@ pub fn process_ensure_guard(program_id: &Pubkey, accounts: &[AccountInfo]) -> Pr
         return Err(ReceiveTokenError::InvalidPda.into());
     }
 
-    let rent = Rent::get()?;
-
     if guard_state.data_is_empty() {
-        let lamports = rent.minimum_balance(GUARD_STATE_SIZE);
         let seeds: &[&[u8]] = &[
             crate::constants::GUARD_STATE_SEED,
             receiver.key.as_ref(),
             mint.key.as_ref(),
             &[state_bump],
         ];
-        invoke_signed(
-            &system_instruction::create_account(
-                payer.key,
-                guard_state.key,
-                lamports,
-                GUARD_STATE_SIZE as u64,
-                program_id,
-            ),
-            &[payer.clone(), guard_state.clone(), system_program.clone()],
-            &[seeds],
+        create_pda_account(
+            payer,
+            guard_state,
+            system_program,
+            GUARD_STATE_SIZE,
+            program_id,
+            seeds,
         )?;
         let mut state_data = guard_state.try_borrow_mut_data()?;
         let state = from_bytes_mut::<GuardState>(&mut state_data[..GUARD_STATE_SIZE]);
@@ -233,23 +223,19 @@ pub fn process_ensure_guard(program_id: &Pubkey, accounts: &[AccountInfo]) -> Pr
     }
 
     if guard_token.data_is_empty() {
-        let lamports = rent.minimum_balance(ACCOUNT_SIZE);
         let seeds: &[&[u8]] = &[
             crate::constants::GUARD_SEED,
             receiver.key.as_ref(),
             mint.key.as_ref(),
             &[guard_bump],
         ];
-        invoke_signed(
-            &system_instruction::create_account(
-                payer.key,
-                guard_token.key,
-                lamports,
-                ACCOUNT_SIZE as u64,
-                program_id,
-            ),
-            &[payer.clone(), guard_token.clone(), system_program.clone()],
-            &[seeds],
+        create_pda_account(
+            payer,
+            guard_token,
+            system_program,
+            ACCOUNT_SIZE,
+            program_id,
+            seeds,
         )?;
         // Held custody must NOT be spendable by the receiver - the receiver is exactly the
         // party the guard protects senders against. The token-level owner is the guard_state

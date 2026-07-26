@@ -261,5 +261,9 @@ fn transfer_reports_credited_vs_held_in_return_data() {
     };
 
     assert_eq!(outcome(99, [31u8; 32]), 1, "below min_amount -> held");
-    assert_eq!(outcome(150, [32u8; 32]), 0, "at or above min_amount -> credited");
+    assert_eq!(
+        outcome(150, [32u8; 32]),
+        0,
+        "at or above min_amount -> credited"
+    );
 }
