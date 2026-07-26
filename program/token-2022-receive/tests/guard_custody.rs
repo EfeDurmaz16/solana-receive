@@ -173,18 +173,16 @@ fn guard_stays_claimable_by_the_originator_after_a_drain_attempt() {
 }
 
 #[test]
-fn tokens_sent_straight_into_a_guard_are_unattributed() {
-    // Pins a documented residual risk (SPEC section 10) rather than a defence.
-    //
-    // The guard-as-endpoint check in process_transfer_checked lives inside the policy branch,
-    // and a guard token account never carries a ReceivePolicy, so a plain 4-account transfer
-    // into a guard is NOT rejected. Nothing is stolen - the tokens simply have no receipt, so
-    // neither claim nor expiry can ever move them out again. If a held total or a sweep path
-    // is added, this test is the one that should change.
+fn a_guard_cannot_be_credited_by_any_path() {
+    // Tokens that reach a guard outside the held path have no receipt, so neither claim nor
+    // expiry can ever move them out: they are destroyed. Before this was enforced, a plain
+    // 4-account transfer naming the guard as destination succeeded AND reported outcome byte
+    // 0 (credited) - the very byte integrators are told to trust.
     let mut fx = Fixture::boot(1_000).with_policy_dest(100);
     let (guard_token, _) =
         derive_guard_token_address(&fx.dest_owner.pubkey(), &fx.mint.pubkey(), &fx.program_id);
 
+    // No-policy path (a guard never carries a policy, so this is the reachable shape).
     send(
         &mut fx.svm,
         &fx.payer,
@@ -201,13 +199,33 @@ fn tokens_sent_straight_into_a_guard_are_unattributed() {
             None,
         )],
     )
-    .expect("a plain transfer into the guard is currently accepted");
+    .expect_err("a guard must not be a transfer destination");
+    fx.svm.expire_blockhash();
 
-    assert_eq!(
-        token_amount(&fx.svm, &guard_token),
-        10,
-        "donated, not recoverable"
-    );
+    // MintTo is the other way to credit an arbitrary token account.
+    send(
+        &mut fx.svm,
+        &fx.payer,
+        &[&fx.mint_authority],
+        vec![token_2022_receive::instruction::mint_to(
+            &fx.program_id,
+            &fx.mint.pubkey(),
+            &guard_token,
+            &fx.mint_authority.pubkey(),
+            10,
+        )],
+    )
+    .expect_err("a guard must not be a MintTo target");
+
+    assert_eq!(token_amount(&fx.svm, &guard_token), 0);
+}
+
+#[test]
+fn held_delivery_still_credits_the_guard() {
+    // The guard refusal must not break the one path that is supposed to fund it.
+    let mut fx = Fixture::boot(1_000).with_policy_dest(100);
+    let held = hold_99(&mut fx, [81u8; 32]);
+    assert_eq!(token_amount(&fx.svm, &held.guard_token), 99);
 }
 
 #[test]

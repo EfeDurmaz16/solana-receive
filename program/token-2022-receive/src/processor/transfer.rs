@@ -6,7 +6,8 @@ use crate::extension::tlv::{
     unpack_account,
 };
 use crate::guard::{
-    assert_guard_state_pda, assert_guard_token_pda, load_guard_state, GuardState, GUARD_STATE_SIZE,
+    assert_guard_state_pda, assert_guard_token_pda, is_guard_token_account, load_guard_state,
+    GuardState, GUARD_STATE_SIZE,
 };
 use crate::processor::{create_pda_account, require_signer};
 use crate::receipt::{
@@ -67,6 +68,9 @@ pub fn process_transfer_checked(
     let (source_owner, source_mint, via_delegate) = {
         let source_data = source_info.try_borrow_data()?;
         let source = unpack_account(&source_data)?;
+        if is_guard_token_account(&source, source_info.key, program_id) {
+            return Err(ReceiveTokenError::GuardNotTransferable.into());
+        }
         if source.is_frozen() {
             return Err(ReceiveTokenError::AccountFrozen.into());
         }
@@ -119,6 +123,13 @@ pub fn process_transfer_checked(
         } else {
             None
         };
+        // Both paths, not just the policy one: a guard never carries a policy, so the check
+        // below in the policy branch could never see it as a destination. Tokens credited to a
+        // guard have no receipt and no way out, and the instruction would otherwise report
+        // `credited` for a transfer that destroyed them.
+        if is_guard_token_account(&dest, destination_info.key, program_id) {
+            return Err(ReceiveTokenError::GuardNotTransferable.into());
+        }
         (dest.owner, dest.mint, policy)
     };
 
@@ -151,13 +162,6 @@ pub fn process_transfer_checked(
 
     assert_guard_token_pda(guard_token, &dest_owner, &dest_mint, program_id)?;
     assert_guard_state_pda(guard_state, &dest_owner, &dest_mint, program_id)?;
-
-    // Defense in depth: the guard is never a transfer source. Unreachable while the guard's
-    // token-level owner is a PDA, but pinned here so an owner-field regression cannot silently
-    // re-open receipt minting against undeposited guard balance.
-    if source_info.key == guard_token.key || destination_info.key == guard_token.key {
-        return Err(ReceiveTokenError::GuardNotTransferable.into());
-    }
 
     let policy = policy.ok_or(ReceiveTokenError::PolicyNotEnabled)?;
 

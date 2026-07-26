@@ -116,10 +116,12 @@ the transfer, and is therefore exactly the party held custody must be protected 
 making the receiver the guard's spending authority would let one signature confiscate every
 sender's held balance in the shard.
 
-Transfer processing additionally rejects the guard as either endpoint of a policy
-`TransferChecked`. That check is defence in depth against a regression, not a reachable path:
-the guard is unsignable, and it never carries a policy of its own. It does **not** cover the
-no-policy path, so an ordinary transfer may still credit a guard - see residual risks.
+A guard is also refused as either endpoint of **any** `TransferChecked` and as a `MintTo`
+target. Tokens that reach a guard outside the held path carry no receipt, so neither claim nor
+expiry can move them out again: crediting a guard destroys the funds, and the instruction would
+otherwise have reported `credited` for it. Guards are recognised in constant time on the
+ordinary path, because `EnsureGuard` records the shard's receiver in the otherwise unused
+`close_authority` field as a marker and nothing else in this program ever sets one.
 
 ## 7. Receipt lifecycle
 
@@ -169,7 +171,8 @@ destination owner is hostile.
 
 | Threat | Mitigation |
 | --- | --- |
-| **Receiver spends held custody directly** | Guard token authority is the `guard_state` PDA (unsignable); guard also rejected as an endpoint of a policy transfer |
+| **Receiver spends held custody directly** | Guard token authority is the `guard_state` PDA (unsignable) |
+| **Funds destroyed by crediting a guard directly** | Guard refused as a transfer endpoint and as a `MintTo` target, on every path |
 | **Policy rewritten mid-flight to seize an in-flight payment** | Policy is write-once |
 | **Receiver-set bond / TTL used to grief the sender** | Capped by `MAX_RECEIPT_BOND_LAMPORTS` / `MAX_RECEIPT_TTL_SLOTS` |
 | **Malformed policy TLV read as "no policy"** | Parse errors fail closed; only genuine absence credits |
@@ -190,7 +193,7 @@ destination owner is hostile.
 | --- | --- |
 | A hostile destination can still *route* an ordinary transfer into held custody by setting an unsatisfiable policy. Recovery is guaranteed (claim or expiry, both bounded), but the sender's funds are delayed, and under `Receiver` / `ThirdParty` recovery the destination decides who claims. **Senders must read the outcome byte, not just transaction success.** | By design; bounded by the TTL cap |
 | Shard capacity is a shared permissionless resource: filling `MAX_OPEN_RECEIPTS` on a `(receiver, mint)` shard costs only refundable bond and denies further *held* delivery until receipts expire. Credited transfers are unaffected and the failure is closed. | Accepted for v0 |
-| Guard-token dust sent directly to the guard PDA is unattributed and unrecoverable. `GuardState` counts open receipts but not a held total, so `guard_token.amount >= sum(open receipt amounts)` holds by construction rather than by on-chain assertion. Adding a held total plus a sweep path is the obvious v1 change. | Accepted for v0 |
+| `GuardState` counts open receipts but not a held total, so `guard_token.amount >= sum(open receipt amounts)` holds by construction rather than by on-chain assertion. Adding a held total plus a sweep path is the obvious v1 change. | Accepted for v0 |
 
 ## 11. Proposal path
 

@@ -102,7 +102,8 @@ Distinct `(receiver, mint)` shards use distinct writable guard PDAs (no shared g
 | Foreign account extension rejected (SPEC section 9) | `smoke` |
 | Error discriminants pinned to their numeric codes | `smoke` |
 | Held requires an initialized guard_state; credited does not | `guard_custody` |
-| Tokens donated straight into a guard are unattributed | `guard_custody` (pins a residual risk, not a defence) |
+| Guard refused as a transfer endpoint and a MintTo target | `guard_custody` |
+| Held delivery still funds the guard | `guard_custody` |
 
 Error codes are explicit and stable (`ReceiveTokenError` discriminants); retired variants
 leave documented gaps rather than renumbering live codes.

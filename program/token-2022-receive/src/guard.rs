@@ -6,7 +6,9 @@
 use crate::constants::{GUARD_SEED, GUARD_STATE_SEED, MAX_OPEN_RECEIPTS};
 use crate::error::ReceiveTokenError;
 use bytemuck::{Pod, Zeroable};
-use solana_program::{account_info::AccountInfo, program_error::ProgramError, pubkey::Pubkey};
+use solana_program::{
+    account_info::AccountInfo, program_error::ProgramError, program_option::COption, pubkey::Pubkey,
+};
 
 /// Companion state PDA for open-receipt accounting (not the token account itself).
 #[repr(C)]
@@ -71,6 +73,27 @@ pub fn assert_guard_state_pda(
         return Err(ReceiveTokenError::InvalidPda.into());
     }
     Ok(bump)
+}
+
+/// Is this token account a guard vault?
+///
+/// Guard custody has exactly two debit paths, `ClaimReceipt` and `CloseExpiredReceipt`, and both
+/// pay out only against a receipt. Tokens that reach a guard any other way have no receipt and
+/// are therefore unrecoverable by anyone, so every credit path has to refuse a guard rather than
+/// report success for a transfer that destroyed the funds.
+///
+/// `close_authority` is set to the shard's receiver at creation purely as a marker (this program
+/// has no CloseAccount and nothing else ever sets the field), so the common case costs one
+/// `COption` discriminant check and the derivation runs only for an account that has one set.
+pub fn is_guard_token_account(
+    account: &crate::state::TokenAccount,
+    key: &Pubkey,
+    program_id: &Pubkey,
+) -> bool {
+    let COption::Some(receiver) = account.close_authority else {
+        return false;
+    };
+    derive_guard_token_address(&receiver, &account.mint, program_id).0 == *key
 }
 
 /// Load a guard_state whose address is already PDA-asserted, checking that its *contents*

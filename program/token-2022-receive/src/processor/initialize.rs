@@ -9,7 +9,7 @@ use crate::extension::tlv::{
 };
 use crate::guard::{
     assert_guard_state_pda, assert_guard_token_pda, derive_guard_state_address,
-    derive_guard_token_address, GuardState, GUARD_STATE_SIZE,
+    derive_guard_token_address, is_guard_token_account, GuardState, GUARD_STATE_SIZE,
 };
 use crate::processor::{create_pda_account, require_signer};
 use crate::state::{unpack_mint, AccountState, Mint, TokenAccount, ACCOUNT_SIZE, MINT_SIZE};
@@ -246,7 +246,10 @@ pub fn process_ensure_guard(program_id: &Pubkey, accounts: &[AccountInfo]) -> Pr
             state: AccountState::Initialized,
             is_native: COption::None,
             delegated_amount: 0,
-            close_authority: COption::None,
+            // Shard marker, not a close authority: this program has no CloseAccount, and
+            // nothing else ever sets the field. Recording the receiver here lets any handler
+            // recognise a guard in O(1) - see guard::is_guard_token_account.
+            close_authority: COption::Some(*receiver.key),
         };
         let mut gdata = guard_token.try_borrow_mut_data()?;
         pack_account(&account, &mut gdata)?;
@@ -288,6 +291,9 @@ pub fn process_mint_to(
     let mut account = unpack_account(&account_data)?;
     if account.mint != *mint_info.key {
         return Err(ReceiveTokenError::MintMismatch.into());
+    }
+    if is_guard_token_account(&account, account_info.key, program_id) {
+        return Err(ReceiveTokenError::GuardNotTransferable.into());
     }
     account.amount = account
         .amount

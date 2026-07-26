@@ -34,7 +34,9 @@ flowchart TD
 `held` **succeeds**. Senders and indexers must read the outcome byte, not just transaction
 success - otherwise a diverted payment reads as a delivered one. Held funds stay recoverable:
 the guard's spending authority is a PDA, so the receiver cannot spend them, and recovery is
-by `ClaimReceipt` or permissionless `CloseExpiredReceipt` after the TTL.
+by `ClaimReceipt` or permissionless `CloseExpiredReceipt` after the TTL. A guard is refused as
+a transfer or mint destination, since tokens reaching it outside the held path would carry no
+receipt and could never be recovered.
 
 ## Status / non-claims
 
