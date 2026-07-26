@@ -384,3 +384,27 @@ fn state_layouts_are_versioned() {
     };
     assert_eq!(r.version, 1);
 }
+
+#[test]
+fn a_foreign_extension_is_rejected_even_without_a_receive_policy() {
+    // SPEC section 9 says ReceivePolicy does not coexist with other account extensions in v0.
+    // The check used to run only when a policy was present, so a destination carrying a foreign
+    // extension and NO policy took the ordinary credit path: exactly the case the claim exists
+    // to cover, since that account's semantics are undefined here.
+    use token_2022_receive::extension::tlv::assert_no_other_extensions;
+
+    let base = token_2022_receive::state::ACCOUNT_SIZE;
+    let mut data = vec![0u8; base + 1 + 4 + 16];
+    data[base] = 2; // ACCOUNT_TYPE_ACCOUNT
+    data[base + 1..base + 3].copy_from_slice(&7u16.to_le_bytes()); // some other extension
+    data[base + 3..base + 5].copy_from_slice(&16u16.to_le_bytes());
+    assert!(
+        assert_no_other_extensions(&data).is_err(),
+        "a foreign extension must be rejected on its own, not only alongside a policy"
+    );
+
+    // And a policy on its own is still fine.
+    let mut ok = vec![0u8; account_len_with_receive_policy()];
+    write_receive_policy_tlv(&mut ok, &ReceivePolicy::default()).unwrap();
+    assert!(assert_no_other_extensions(&ok).is_ok());
+}

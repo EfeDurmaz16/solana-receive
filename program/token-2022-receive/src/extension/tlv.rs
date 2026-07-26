@@ -11,6 +11,43 @@ pub const TLV_TYPE_SIZE: usize = 2;
 pub const TLV_LENGTH_SIZE: usize = 2;
 pub const TLV_HEADER_SIZE: usize = TLV_TYPE_SIZE + TLV_LENGTH_SIZE;
 
+/// Walk the TLV region once, feeding each `(type, declared_len, value_offset)` to `visit`.
+///
+/// One walker, not two. Two independent parsers of the same bytes can disagree on a malformed
+/// entry - one erroring where the other returns Ok - and which one a caller happens to reach
+/// then decides whether a bad policy is rejected or silently treated as absent.
+///
+/// `visit` returning `Some(v)` stops the walk with `Ok(Some(v))`. Running out of entries is
+/// `Ok(None)`; a declared length that overruns the account is an error.
+fn walk_extensions<T>(
+    data: &[u8],
+    mut visit: impl FnMut(u16, usize, usize) -> Result<Option<T>, ProgramError>,
+) -> Result<Option<T>, ProgramError> {
+    if data.len() < ACCOUNT_SIZE + 1 || data[ACCOUNT_SIZE] != ACCOUNT_TYPE_ACCOUNT {
+        return Ok(None);
+    }
+    let mut cursor = ACCOUNT_SIZE + 1;
+    while cursor + TLV_HEADER_SIZE <= data.len() {
+        let typ = u16::from_le_bytes(data[cursor..cursor + 2].try_into().unwrap());
+        if typ == 0 {
+            return Ok(None);
+        }
+        let len = u16::from_le_bytes(data[cursor + 2..cursor + 4].try_into().unwrap()) as usize;
+        let value_start = cursor + TLV_HEADER_SIZE;
+        let value_end = value_start
+            .checked_add(len)
+            .ok_or(ReceiveTokenError::Overflow)?;
+        if value_end > data.len() {
+            return Err(ReceiveTokenError::InvalidAccountData.into());
+        }
+        if let Some(found) = visit(typ, len, value_start)? {
+            return Ok(Some(found));
+        }
+        cursor = value_end;
+    }
+    Ok(None)
+}
+
 /// Locate a TLV entry, returning `(value_offset, declared_len)`.
 ///
 /// `PolicyNotEnabled` means the account simply carries no such extension (a plain 165-byte
@@ -20,29 +57,10 @@ pub fn find_extension_offset(
     data: &[u8],
     extension_type: u16,
 ) -> Result<(usize, usize), ProgramError> {
-    if data.len() < ACCOUNT_SIZE + 1 || data[ACCOUNT_SIZE] != ACCOUNT_TYPE_ACCOUNT {
-        return Err(ReceiveTokenError::PolicyNotEnabled.into());
-    }
-    let mut cursor = ACCOUNT_SIZE + 1;
-    while cursor + TLV_HEADER_SIZE <= data.len() {
-        let typ = u16::from_le_bytes(data[cursor..cursor + 2].try_into().unwrap());
-        let len = u16::from_le_bytes(data[cursor + 2..cursor + 4].try_into().unwrap()) as usize;
-        let value_start = cursor + TLV_HEADER_SIZE;
-        let value_end = value_start
-            .checked_add(len)
-            .ok_or(ReceiveTokenError::Overflow)?;
-        if value_end > data.len() {
-            return Err(ReceiveTokenError::InvalidAccountData.into());
-        }
-        if typ == extension_type {
-            return Ok((value_start, len));
-        }
-        if typ == 0 {
-            break;
-        }
-        cursor = value_end;
-    }
-    Err(ReceiveTokenError::PolicyNotEnabled.into())
+    walk_extensions(data, |typ, len, offset| {
+        Ok((typ == extension_type).then_some((offset, len)))
+    })?
+    .ok_or_else(|| ReceiveTokenError::PolicyNotEnabled.into())
 }
 
 /// Copy out policy (TLV value may be unaligned after the 165-byte base).
@@ -76,30 +94,20 @@ pub fn has_receive_policy(data: &[u8]) -> Result<bool, ProgramError> {
     }
 }
 
-/// SPEC §9: ReceivePolicy does not coexist with other account extensions in v0.
+/// SPEC section 9: ReceivePolicy does not coexist with other account extensions in v0.
 ///
-/// Without this the claim was documentation only - the TLV walker happily skipped past any
-/// other extension, so a Transfer Hook or Confidential Transfer account would have taken the
-/// policy path with semantics this version never defined.
+/// Called on every policy-path destination AND on plain ones: an account carrying a foreign
+/// extension but no ReceivePolicy would otherwise take the ordinary credit path, which is
+/// exactly the case the claim needs to cover.
 pub fn assert_no_other_extensions(data: &[u8]) -> Result<(), ProgramError> {
-    if data.len() < ACCOUNT_SIZE + 1 || data[ACCOUNT_SIZE] != ACCOUNT_TYPE_ACCOUNT {
-        return Ok(());
-    }
-    let mut cursor = ACCOUNT_SIZE + 1;
-    while cursor + TLV_HEADER_SIZE <= data.len() {
-        let typ = u16::from_le_bytes(data[cursor..cursor + 2].try_into().unwrap());
-        if typ == 0 {
-            return Ok(());
+    walk_extensions(data, |typ, _, _| {
+        if typ == EXTENSION_TYPE_RECEIVE_POLICY {
+            Ok(None)
+        } else {
+            Err(ReceiveTokenError::UnsupportedExtension.into())
         }
-        let len = u16::from_le_bytes(data[cursor + 2..cursor + 4].try_into().unwrap()) as usize;
-        if typ != EXTENSION_TYPE_RECEIVE_POLICY {
-            return Err(ReceiveTokenError::UnsupportedExtension.into());
-        }
-        cursor = (cursor + TLV_HEADER_SIZE)
-            .checked_add(len)
-            .ok_or(ReceiveTokenError::Overflow)?;
-    }
-    Ok(())
+    })
+    .map(|_: Option<()>| ())
 }
 
 pub fn account_len_with_receive_policy() -> usize {

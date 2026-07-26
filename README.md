@@ -47,7 +47,7 @@ receipt and could never be recovered.
 | --- | --- |
 | In tree | Reference program, host + LiteSVM suites, golden vectors, draft sRFC |
 | Measured | CU ceilings + footprints under LiteSVM (see [docs/VERIFICATION.md](docs/VERIFICATION.md)) |
-| Not claimed | Canonical Token-2022, TokenzQd wire compatibility, legacy USDC interception, full upstream extension parity, mainnet product |
+| Not claimed | Canonical Token-2022, TokenzQd wire compatibility, legacy USDC interception, full upstream extension parity, mainnet product, any upgrade or migration path |
 
 ## Tests
 

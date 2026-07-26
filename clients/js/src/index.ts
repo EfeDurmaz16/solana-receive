@@ -278,21 +278,36 @@ export function hasReceivePolicy(data: Uint8Array): boolean {
   return decodeReceivePolicy(data) !== null;
 }
 
+/** Byte size of a Receipt account; the bond is floored at its rent exemption on chain. */
+export const RECEIPT_SIZE = 304;
+
+export type PreviewedOutcome = "credited" | "held" | "failed";
+
 /**
- * Would this policy accept `amount` from `sourceOwner`, and would a hold meet `limits`?
+ * What will this transfer actually do?
  *
  * Lets a sender decide before paying instead of discovering it from a failed transaction or,
- * worse, a successful one that held the funds.
+ * worse, a successful one that held the funds. Mirrors the on-chain order of checks, including
+ * the two that a naive preview gets wrong:
+ *
+ * - the bond is `max(policy.receiptBondLamports, rent(RECEIPT_SIZE))`, so a sender ceiling below
+ *   the rent floor refuses a hold even when the policy asks for nothing;
+ * - a zero-amount hold is rejected outright.
+ *
+ * Pass `rentExemptReceiptLamports` from `getMinimumBalanceForRentExemption(RECEIPT_SIZE)` to get
+ * the bond floor right; omitting it previews the un-floored bond and can disagree with the chain.
  */
 export function previewOutcome(params: {
   policy: ReceivePolicy | null;
   amount: bigint | number;
   sourceOwner: Uint8Array;
   limits: HeldLimits;
-}): "credited" | "held" | "rejected-by-sender-limits" {
+  rentExemptReceiptLamports?: bigint | number;
+}): PreviewedOutcome {
   const { policy } = params;
-  if (!policy) return "credited";
   const amount = BigInt(params.amount);
+  if (!policy) return "credited";
+
   const sameKey = (a: Uint8Array, b: Uint8Array) =>
     a.length === b.length && a.every((x, i) => x === b[i]);
   const accepts =
@@ -300,12 +315,19 @@ export function previewOutcome(params: {
     (policy.sourceOwnerMode === 0 ||
       policy.allowlist.some((k) => sameKey(k, params.sourceOwner)));
   if (accepts) return "credited";
+
+  // From here the policy rejects, so the outcome is either a hold or a failure.
+  if (amount === 0n) return "failed";
+
+  const rentFloor = BigInt(params.rentExemptReceiptLamports ?? 0);
+  const bond =
+    policy.receiptBondLamports > rentFloor ? policy.receiptBondLamports : rentFloor;
   if (
-    policy.receiptBondLamports > BigInt(params.limits.maxBondLamports) ||
+    bond > BigInt(params.limits.maxBondLamports) ||
     policy.receiptTtlSlots > BigInt(params.limits.maxTtlSlots) ||
     policy.recoveryAuthorityMode > params.limits.maxRecoveryMode
   ) {
-    return "rejected-by-sender-limits";
+    return "failed";
   }
   return "held";
 }

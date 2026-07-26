@@ -139,7 +139,7 @@ pub fn process_claim_receipt(program_id: &Pubkey, accounts: &[AccountInfo]) -> P
     require_signer(claim_authority)?;
 
     let receipt = load_open_receipt(receipt_info, program_id)?;
-    if receipt.claim_authority() != *claim_authority.key {
+    if receipt.claim_authority()? != *claim_authority.key {
         return Err(ReceiveTokenError::UnauthorizedClaim.into());
     }
     if receipt.mint != *mint_info.key {

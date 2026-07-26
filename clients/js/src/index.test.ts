@@ -261,12 +261,56 @@ test("previewOutcome tells a sender what will happen before paying", () => {
   assert.equal(preview(50n, sender), "held"); // below minAmount
   assert.equal(preview(150n, stranger), "held"); // not on the allowlist
   // The sender refuses to hand recovery to the receiver, so the hold would fail on chain.
-  assert.equal(preview(50n, sender, ORIGINATOR_RECOVERY_ONLY), "rejected-by-sender-limits");
-  assert.equal(preview(50n, sender, NO_HELD_DELIVERY), "rejected-by-sender-limits");
+  assert.equal(preview(50n, sender, ORIGINATOR_RECOVERY_ONLY), "failed");
+  assert.equal(preview(50n, sender, NO_HELD_DELIVERY), "failed");
+  // A zero-amount hold is rejected on chain, so the preview must not say "held".
+  assert.equal(preview(0n, sender), "failed");
   // No policy at all: an ordinary credit.
   assert.equal(
     previewOutcome({ policy: null, amount: 1n, sourceOwner: sender, limits: NO_HELD_DELIVERY }),
     "credited",
+  );
+});
+
+test("previewOutcome applies the rent floor to the bond", () => {
+  // On chain the bond is max(policy.receiptBondLamports, rent(RECEIPT_SIZE)). A preview that
+  // compares the raw policy field predicts "held" where the chain refuses the hold.
+  const sender = new Uint8Array(32).fill(0x11);
+  const policy = {
+    minAmount: 100n,
+    sourceOwnerMode: 0,
+    recoveryAuthorityMode: 0,
+    recoveryAuthority: new Uint8Array(32),
+    receiptBondLamports: 0n, // asks for nothing, yet rent is still charged
+    receiptTtlSlots: 1_000n,
+    allowlist: [] as Uint8Array[],
+  };
+  const rent = 2_400_000n;
+  const limits = { maxBondLamports: 1_000n, maxTtlSlots: 10_000n, maxRecoveryMode: 2 };
+
+  // Without the floor the raw 0 bond looks acceptable.
+  assert.equal(previewOutcome({ policy, amount: 1n, sourceOwner: sender, limits }), "held");
+  // With it, the sender's 1_000 lamport ceiling cannot cover rent.
+  assert.equal(
+    previewOutcome({
+      policy,
+      amount: 1n,
+      sourceOwner: sender,
+      limits,
+      rentExemptReceiptLamports: rent,
+    }),
+    "failed",
+  );
+  // A ceiling above rent still holds.
+  assert.equal(
+    previewOutcome({
+      policy,
+      amount: 1n,
+      sourceOwner: sender,
+      limits: { ...limits, maxBondLamports: rent },
+      rentExemptReceiptLamports: rent,
+    }),
+    "held",
   );
 });
 

@@ -89,11 +89,18 @@ impl Receipt {
         self.status == ReceiptStatus::Open as u8
     }
 
-    pub fn claim_authority(&self) -> Pubkey {
-        match self.recovery_authority_mode {
-            x if x == RecoveryAuthorityMode::Receiver as u8 => self.receiver_owner,
-            x if x == RecoveryAuthorityMode::ThirdParty as u8 => self.recovery_authority,
-            _ => self.source_owner,
-        }
+    /// Fail closed on an unrecognised mode rather than defaulting to `Originator`.
+    ///
+    /// Not reachable today: every writer parses the byte before storing it. Kept strict because
+    /// the failure mode is silent - a corrupt byte would hand recovery to whoever the default
+    /// names, and this function decides who may take the money.
+    pub fn claim_authority(&self) -> Result<Pubkey, ProgramError> {
+        Ok(
+            match RecoveryAuthorityMode::try_from_byte(self.recovery_authority_mode)? {
+                RecoveryAuthorityMode::Originator => self.source_owner,
+                RecoveryAuthorityMode::Receiver => self.receiver_owner,
+                RecoveryAuthorityMode::ThirdParty => self.recovery_authority,
+            },
+        )
     }
 }

@@ -295,3 +295,130 @@ fn a_sender_refuses_a_policy_that_hands_recovery_to_the_receiver() {
         .expect("the same transfer is accepted by a sender that allows it");
     assert_eq!(token_amount(&fx.svm, &guard_token), 99);
 }
+
+#[test]
+fn the_sender_bond_ceiling_is_compared_against_the_rent_floored_bond() {
+    // On chain the bond is max(policy.receiptBondLamports, rent(RECEIPT_SIZE)). A ceiling below
+    // the rent floor must refuse the hold even when the policy asks for zero, or a sender would
+    // be charged rent it never agreed to.
+    let mut fx = Fixture::boot(1_000);
+    let owner = fx.dest_owner.insecure_clone();
+    let rent = fx
+        .svm
+        .minimum_balance_for_rent_exemption(token_2022_receive::receipt::RECEIPT_SIZE);
+    assert!(rent > 0);
+
+    // Policy asks for a zero bond, so only the rent floor is in play.
+    let acct = {
+        let space = token_2022_receive::extension::tlv::account_len_with_receive_policy();
+        let r = fx.svm.minimum_balance_for_rent_exemption(space);
+        let k = solana_sdk::signature::Keypair::new();
+        send(
+            &mut fx.svm,
+            &fx.payer,
+            &[&k],
+            vec![solana_sdk::system_instruction::create_account(
+                &fx.payer.pubkey(),
+                &k.pubkey(),
+                r,
+                space as u64,
+                &fx.program_id,
+            )],
+        )
+        .expect("create");
+        send(
+            &mut fx.svm,
+            &fx.payer,
+            &[],
+            vec![token_2022_receive::instruction::initialize_account3(
+                &fx.program_id,
+                &k.pubkey(),
+                &fx.mint.pubkey(),
+                &owner.pubkey(),
+            )],
+        )
+        .expect("init");
+        send(
+            &mut fx.svm,
+            &fx.payer,
+            &[&owner],
+            vec![token_2022_receive::instruction::initialize_receive_policy(
+                &fx.program_id,
+                &k.pubkey(),
+                &owner.pubkey(),
+                100,
+                0,
+                0,
+                solana_sdk::pubkey::Pubkey::default(),
+                0, // zero bond
+                token_2022_receive::constants::DEFAULT_RECEIPT_TTL_SLOTS,
+                vec![],
+            )],
+        )
+        .expect("init policy");
+        k
+    };
+    let (guard_token, _) =
+        derive_guard_token_address(&owner.pubkey(), &fx.mint.pubkey(), &fx.program_id);
+    let (guard_state, _) =
+        derive_guard_state_address(&owner.pubkey(), &fx.mint.pubkey(), &fx.program_id);
+    send(
+        &mut fx.svm,
+        &fx.payer,
+        &[],
+        vec![token_2022_receive::instruction::ensure_guard(
+            &fx.program_id,
+            &fx.payer.pubkey(),
+            &owner.pubkey(),
+            &fx.mint.pubkey(),
+            &guard_token,
+            &guard_state,
+        )],
+    )
+    .expect("ensure guard");
+    fx.svm.expire_blockhash();
+
+    let try_hold = |fx: &mut Fixture, max_bond: u64, nonce: [u8; 32]| {
+        let (receipt, _) = derive_receipt_address(
+            &owner.pubkey(),
+            &fx.mint.pubkey(),
+            &fx.source_owner.pubkey(),
+            &nonce,
+            &fx.program_id,
+        );
+        let r = send(
+            &mut fx.svm,
+            &fx.payer,
+            &[&fx.source_owner],
+            vec![transfer_checked(
+                &fx.program_id,
+                &fx.source.pubkey(),
+                &fx.mint.pubkey(),
+                &acct.pubkey(),
+                &fx.source_owner.pubkey(),
+                99,
+                6,
+                nonce,
+                HeldLimits {
+                    max_bond_lamports: max_bond,
+                    ..HeldLimits::unlimited()
+                },
+                Some(PolicyTransferAccounts {
+                    guard_token,
+                    guard_state,
+                    receipt,
+                    bond_payer: fx.payer.pubkey(),
+                }),
+            )],
+        );
+        fx.svm.expire_blockhash();
+        r
+    };
+
+    // A ceiling just under the rent floor must refuse, despite the policy asking for zero.
+    try_hold(&mut fx, rent - 1, [141u8; 32])
+        .expect_err("the rent floor counts toward the sender's bond ceiling");
+    // Exactly at the floor is acceptable.
+    try_hold(&mut fx, rent, [142u8; 32]).expect("a ceiling that covers rent is enough");
+    assert_eq!(token_amount(&fx.svm, &guard_token), 99);
+}

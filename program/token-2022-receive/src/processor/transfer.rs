@@ -1,5 +1,6 @@
 //! TransferChecked with credited vs held outcomes.
 
+use crate::constants::{MAX_RECEIPT_BOND_LAMPORTS, MAX_RECEIPT_TTL_SLOTS};
 use crate::error::ReceiveTokenError;
 use crate::extension::tlv::{
     assert_no_other_extensions, get_receive_policy, has_receive_policy, pack_account,
@@ -120,8 +121,11 @@ pub fn process_transfer_checked(
         if dest.mint != source_mint {
             return Err(ReceiveTokenError::MintMismatch.into());
         }
+        // Unconditional: SPEC section 9 says ReceivePolicy does not coexist with other account
+        // extensions in v0, and a destination carrying a foreign extension but NO policy would
+        // otherwise take the plain credit path, which is the case the claim most needs to cover.
+        assert_no_other_extensions(&dest_data)?;
         let policy = if dest_has_policy {
-            assert_no_other_extensions(&dest_data)?;
             Some(get_receive_policy(&dest_data)?)
         } else {
             None
@@ -175,25 +179,48 @@ pub fn process_transfer_checked(
         move_amount(source_info, destination_info, amount, via_delegate)?;
         credited()
     } else {
-        // A zero-amount hold would burn one of MAX_OPEN_RECEIPTS slots while moving nothing,
-        // letting someone with no tokens at all fill a victim's shard.
+        // Everything that can refuse this hold is checked before anything is written. A
+        // transaction-wide revert would undo a premature mutation anyway, but ordering the
+        // rejections first is what lets the code be read as "nothing happens unless all of
+        // these pass".
+        //
+        // A zero-amount hold would open a receipt while moving nothing, letting someone with no
+        // tokens at all pile receipts onto a victim's shard.
         if amount == 0 {
             return Err(ReceiveTokenError::InsufficientFunds.into());
         }
 
-        // Validated here rather than before the accept/reject branch: only the held path
-        // touches guard state, and requiring it on the credited path would make an otherwise
-        // valid credit fail whenever EnsureGuard had not been run.
-        load_guard_state(guard_state, guard_token.key, &dest_owner, &dest_mint)?;
+        let rent = Rent::get()?;
+        let receipt_rent = rent.minimum_balance(RECEIPT_SIZE);
+        let bond = policy.receipt_bond_lamports.max(receipt_rent);
 
-        {
-            let mut gs_data = guard_state.try_borrow_mut_data()?;
-            if gs_data.len() < GUARD_STATE_SIZE {
-                return Err(ReceiveTokenError::InvalidAccountData.into());
-            }
-            let gs = from_bytes_mut::<GuardState>(&mut gs_data[..GUARD_STATE_SIZE]);
-            gs.record_hold(amount)?;
+        // Protocol caps are re-checked at point of use, not only at InitializeReceivePolicy.
+        // The policy is a TLV blob with no version of its own, so a value written by a build
+        // that predates these caps would otherwise be honoured here.
+        if policy.receipt_bond_lamports > MAX_RECEIPT_BOND_LAMPORTS {
+            return Err(ReceiveTokenError::PolicyBondTooLarge.into());
         }
+        if policy.receipt_ttl_slots > MAX_RECEIPT_TTL_SLOTS {
+            return Err(ReceiveTokenError::PolicyTtlTooLarge.into());
+        }
+
+        // The sender's terms. A destination can always refuse a payment; it must not be able to
+        // set the price of being refused, or decide who ends up with the money. `bond` is the
+        // rent-floored figure the bond payer will actually fund, not the raw policy field.
+        if bond > limits.max_bond_lamports {
+            return Err(ReceiveTokenError::BondAboveSenderLimit.into());
+        }
+        if policy.receipt_ttl_slots > limits.max_ttl_slots {
+            return Err(ReceiveTokenError::TtlAboveSenderLimit.into());
+        }
+        if policy.recovery_authority_mode > limits.max_recovery_mode {
+            return Err(ReceiveTokenError::RecoveryModeAboveSenderLimit.into());
+        }
+
+        // Only the held path touches guard state, so it is validated here rather than before the
+        // accept/reject branch: requiring it on the credited path would make an otherwise valid
+        // credit fail whenever EnsureGuard had not been run.
+        load_guard_state(guard_state, guard_token.key, &dest_owner, &dest_mint)?;
 
         let receipt_bump = assert_receipt_pda(
             receipt_info,
@@ -203,7 +230,6 @@ pub fn process_transfer_checked(
             &unique_nonce,
             program_id,
         )?;
-
         if !receipt_info.data_is_empty() {
             return Err(ReceiveTokenError::AlreadyInUse.into());
         }
@@ -214,20 +240,14 @@ pub fn process_transfer_checked(
             .checked_add(policy.receipt_ttl_slots)
             .ok_or(ReceiveTokenError::Overflow)?;
 
-        let rent = Rent::get()?;
-        let receipt_rent = rent.minimum_balance(RECEIPT_SIZE);
-        let bond = policy.receipt_bond_lamports.max(receipt_rent);
-
-        // The sender's terms, checked before anything is debited. A destination can always
-        // refuse a payment; it must not be able to set the price of being refused.
-        if bond > limits.max_bond_lamports {
-            return Err(ReceiveTokenError::BondAboveSenderLimit.into());
-        }
-        if policy.receipt_ttl_slots > limits.max_ttl_slots {
-            return Err(ReceiveTokenError::TtlAboveSenderLimit.into());
-        }
-        if policy.recovery_authority_mode > limits.max_recovery_mode {
-            return Err(ReceiveTokenError::RecoveryModeAboveSenderLimit.into());
+        // First write.
+        {
+            let mut gs_data = guard_state.try_borrow_mut_data()?;
+            if gs_data.len() < GUARD_STATE_SIZE {
+                return Err(ReceiveTokenError::InvalidAccountData.into());
+            }
+            let gs = from_bytes_mut::<GuardState>(&mut gs_data[..GUARD_STATE_SIZE]);
+            gs.record_hold(amount)?;
         }
 
         let seeds: &[&[u8]] = &[

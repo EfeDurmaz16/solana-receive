@@ -10,7 +10,7 @@ use crate::extension::tlv::{
 use crate::guard::{
     assert_guard_state_pda, assert_guard_token_pda, derive_guard_state_address,
     derive_guard_token_address, is_guard_token_account, GuardState, GUARD_STATE_DISCRIMINATOR,
-    GUARD_STATE_SIZE,
+    GUARD_STATE_SIZE, GUARD_STATE_VERSION,
 };
 use crate::processor::{create_pda_account, require_signer};
 use crate::state::{unpack_mint, AccountState, Mint, TokenAccount, ACCOUNT_SIZE, MINT_SIZE};
@@ -225,6 +225,32 @@ pub fn process_ensure_guard(program_id: &Pubkey, accounts: &[AccountInfo]) -> Pr
         derive_guard_state_address(receiver.key, mint.key, program_id);
     if guard_state.key != &expected_state {
         return Err(ReceiveTokenError::InvalidPda.into());
+    }
+
+    // A shard that already exists must be readable by THIS program before anything else is
+    // touched. An earlier build wrote a 112-byte GuardState with no version and no held_amount;
+    // this one requires 128 bytes with version 1. Skipping an unreadable companion state while
+    // still repairing the vault below would seal the balance under a state that held, claim and
+    // close all reject: the tokens would be unspendable AND unrecoverable. Refusing here keeps
+    // the shard exactly as it was and names the reason.
+    //
+    // No migration is provided. This program has never been deployed, so there is no legacy
+    // state to migrate; the version fields exist so that a post-deploy layout change CAN be
+    // migrated, and so a mismatch fails closed instead of being misread. See SPEC section 6.
+    if !guard_state.data_is_empty() {
+        let data = guard_state.try_borrow_data()?;
+        if data.len() != GUARD_STATE_SIZE {
+            return Err(ReceiveTokenError::UnsupportedStateVersion.into());
+        }
+        let existing = bytemuck::from_bytes::<GuardState>(&data[..GUARD_STATE_SIZE]);
+        if existing.discriminator != GUARD_STATE_DISCRIMINATOR
+            || existing.version != GUARD_STATE_VERSION
+        {
+            return Err(ReceiveTokenError::UnsupportedStateVersion.into());
+        }
+        if existing.receiver != *receiver.key || existing.mint != *mint.key {
+            return Err(ReceiveTokenError::InvalidAccountData.into());
+        }
     }
 
     if guard_state.data_is_empty() {

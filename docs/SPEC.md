@@ -35,7 +35,7 @@ Policy attaches to a **destination token account** owned by this program. Accoun
 | `source_owner_mode` | `AllowAll` \| `Allowlist` |
 | `source_owner_allowlist` | Up to **8** pubkeys (v0 in-account cap) |
 | `recovery_authority` | Who may claim held receipts |
-| `receipt_bond_lamports` | Bond/rent reserved per open receipt |
+| `receipt_bond_lamports` | Bond reserved per open receipt; the charged bond is `max(this, rent(RECEIPT_SIZE))` |
 | `receipt_ttl_slots` | Expiry window (default **1_512_000** ≈ 7 days) |
 
 Acceptance (v0):
@@ -96,8 +96,9 @@ Policy rejects an otherwise token-valid transfer → amount routes **source → 
 
 Because `held` succeeds, the instruction reports the outcome two ways: a `msg!` log line, and
 one byte of **return data** (`0` credited, `1` held). On `held` the log also carries the receipt
-address, amount and `expires_slot`, so an off-chain consumer can attribute the hold and find the
-account to claim without scanning. A caller that checks only whether the
+address, which is all an off-chain consumer needs: the receipt account itself holds the amount and
+`expires_slot`. It is emitted with `sol_log_pubkey`, since base58-formatting a key inside `msg!`
+costs several thousand compute units. A caller that checks only whether the
 transaction landed will read a held transfer as a delivered payment; integrators MUST read the
 outcome.
 

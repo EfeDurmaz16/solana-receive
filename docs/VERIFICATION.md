@@ -14,7 +14,8 @@ How to reproduce host and on-VM evidence for `token-2022-receive`.
 | Pre-funded PDAs | `cargo build-sbf` then `cargo test -p token-2022-receive --test prefunded_pdas` | Dust on a guard or receipt address cannot brick creation |
 | Claim authority | `cargo build-sbf` then `cargo test -p token-2022-receive --test claim_authority` | All three recovery modes; unsigned authority; guard aliasing |
 | Wire vectors | `cargo test -p token-2022-receive --test wire_vectors` | Byte vectors shared with the JS client |
-| Sender limits | `cargo build-sbf` then `cargo test -p token-2022-receive --test sender_limits` | Refuse a hold; cap bond; cap TTL |
+| Sender limits | `cargo build-sbf` then `cargo test -p token-2022-receive --test sender_limits` | Refuse a hold; cap bond and TTL; rent-floored bond |
+| Legacy layouts | `cargo build-sbf` then `cargo test -p token-2022-receive --test legacy_state` | Unrecognised layouts fail closed and are left untouched |
 | JS client | `cd clients/js && npm run typecheck && npm test` | Encoder vectors, pubkey length checks, account roles |
 | Host verify | `cargo test -p token-2022-receive --test verify_no_policy --test verify_policy_transfer --test verify_receipt_lifecycle` | Stateful AccountInfo + syscall stubs |
 | Golden vectors | `cargo test -p token-2022-receive --test golden_vectors` | sRFC §9 IDs `V-NP`…`V-AU` + nonce contract |
@@ -111,6 +112,10 @@ Distinct `(receiver, mint)` shards use distinct writable guard PDAs (no shared g
 | Error discriminants pinned to their numeric codes | `smoke` |
 | Held requires an initialized guard_state; credited does not | `guard_custody` |
 | Guard refused as a transfer endpoint and a MintTo target | `guard_custody` |
+| Legacy `GuardState` / version-0 `Receipt` refused, state left untouched | `legacy_state` (LiteSVM, real SBF) |
+| Foreign extension rejected with no policy present | `smoke` |
+| Sender bond ceiling compared against the rent-floored bond | `sender_limits` |
+| Protocol caps re-checked when a receipt is created | `sender_limits`, `policy_bounds` |
 | Held delivery still funds the guard | `guard_custody` |
 | `held_amount` tracks every held token across hold and claim | `guard_custody` |
 | Sender can refuse a hold, cap the bond, cap the TTL | `sender_limits` (LiteSVM, real SBF) |
