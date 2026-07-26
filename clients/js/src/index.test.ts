@@ -13,7 +13,10 @@ import assert from "node:assert/strict";
 
 import {
   NO_HELD_DELIVERY,
+  ORIGINATOR_RECOVERY_ONLY,
   UNLIMITED_HELD_LIMITS,
+  decodeReceivePolicy,
+  previewOutcome,
   decodeTransferOutcome,
   encodeInitializeReceivePolicy,
   encodeTransferChecked,
@@ -195,6 +198,76 @@ test("PDA seed builders reject wrong-length keys", async () => {
   assert.throws(() => receiptSeeds(ok, ok, ok, new Uint8Array(31)));
   assert.equal(guardTokenSeeds(ok, ok).length, 3);
   assert.equal(receiptSeeds(ok, ok, ok, new Uint8Array(32)).length, 5);
+});
+
+test("ReceivePolicy account layout vector, shared with wire_vectors.rs", () => {
+  // Same bytes the Rust suite asserts. A sender needs the destination's terms to choose sensible
+  // HeldLimits, and the policy is write-once, so what this reads cannot change under an
+  // in-flight payment.
+  const data = new Uint8Array(498);
+  const put = (offset: number, h: string) => {
+    for (let i = 0; i < h.length / 2; i++) data[offset + i] = parseInt(h.slice(i * 2, i * 2 + 2), 16);
+  };
+  put(
+    165,
+    "02" + // ACCOUNT_TYPE_ACCOUNT
+      "1027" + // extension type 10_000
+      "4801" + // declared length 328
+      "6400000000000000" + // minAmount 100
+      "01" + // sourceOwnerMode Allowlist
+      "01" + // recoveryAuthorityMode Receiver
+      "000000000000" +
+      "ab".repeat(32) + // recoveryAuthority
+      "0700000000000000" + // receiptBondLamports 7
+      "4012170000000000", // receiptTtlSlots 1_512_000
+  );
+  data[234] = 1; // allowlistLen
+  put(242, "11".repeat(32));
+
+  const policy = decodeReceivePolicy(data);
+  assert.ok(policy);
+  assert.equal(policy.minAmount, 100n);
+  assert.equal(policy.sourceOwnerMode, 1);
+  assert.equal(policy.recoveryAuthorityMode, 1);
+  assert.equal(hex(policy.recoveryAuthority), "ab".repeat(32));
+  assert.equal(policy.receiptBondLamports, 7n);
+  assert.equal(policy.receiptTtlSlots, 1_512_000n);
+  assert.equal(policy.allowlist.length, 1);
+  assert.equal(hex(policy.allowlist[0]!), "11".repeat(32));
+
+  // A plain token account carries no policy; a corrupt one must throw rather than read as none.
+  assert.equal(decodeReceivePolicy(new Uint8Array(165)), null);
+  const corrupt = data.slice();
+  corrupt[168] = 4; // declared length no longer matches the struct
+  assert.throws(() => decodeReceivePolicy(corrupt));
+});
+
+test("previewOutcome tells a sender what will happen before paying", () => {
+  const sender = new Uint8Array(32).fill(0x11);
+  const stranger = new Uint8Array(32).fill(0x22);
+  const policy = {
+    minAmount: 100n,
+    sourceOwnerMode: 1, // Allowlist
+    recoveryAuthorityMode: 1, // Receiver claims what it rejects
+    recoveryAuthority: new Uint8Array(32),
+    receiptBondLamports: 7n,
+    receiptTtlSlots: 1_512_000n,
+    allowlist: [sender],
+  };
+  const preview = (amount: bigint, who: Uint8Array, limits = UNLIMITED_HELD_LIMITS) =>
+    previewOutcome({ policy, amount, sourceOwner: who, limits });
+
+  assert.equal(preview(150n, sender), "credited");
+  assert.equal(preview(50n, sender), "held"); // below minAmount
+  assert.equal(preview(150n, stranger), "held"); // not on the allowlist
+  // The sender refuses to hand recovery to the receiver, so the hold would fail on chain.
+  assert.equal(preview(50n, sender, ORIGINATOR_RECOVERY_ONLY), "rejected-by-sender-limits");
+  assert.equal(preview(50n, sender, NO_HELD_DELIVERY), "rejected-by-sender-limits");
+  // No policy at all: an ordinary credit.
+  assert.equal(
+    previewOutcome({ policy: null, amount: 1n, sourceOwner: sender, limits: NO_HELD_DELIVERY }),
+    "credited",
+  );
 });
 
 test("decodeTransferOutcome distinguishes held from credited", () => {

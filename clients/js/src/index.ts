@@ -202,6 +202,114 @@ export function decodeTransferOutcome(
   return byte;
 }
 
+// —— Reading a destination's terms before paying ——
+
+const ACCOUNT_SIZE = 165;
+const ACCOUNT_TYPE_ACCOUNT = 2;
+const EXTENSION_TYPE_RECEIVE_POLICY = 10_000;
+const ALLOWLIST_CAP_BYTES = 8 * 32;
+/** min_amount(8) modes(2) pad(6) recovery_authority(32) bond(8) ttl(8) len(1) pad(7) allowlist */
+const POLICY_LEN = 8 + 1 + 1 + 6 + 32 + 8 + 8 + 1 + 7 + ALLOWLIST_CAP_BYTES;
+
+export type ReceivePolicy = {
+  minAmount: bigint;
+  sourceOwnerMode: number;
+  recoveryAuthorityMode: number;
+  recoveryAuthority: Uint8Array;
+  receiptBondLamports: bigint;
+  receiptTtlSlots: bigint;
+  allowlist: Uint8Array[];
+};
+
+/**
+ * Decode a destination's ReceivePolicy from raw account data.
+ *
+ * A sender cannot choose sensible `HeldLimits` without knowing the destination's terms, and the
+ * policy is write-once, so what this returns cannot change under an in-flight payment. Returns
+ * `null` when the account carries no policy. Throws when the account carries a malformed one:
+ * treating corruption as absence is how a policy gets bypassed.
+ */
+export function decodeReceivePolicy(data: Uint8Array): ReceivePolicy | null {
+  if (data.length < ACCOUNT_SIZE + 1 || data[ACCOUNT_SIZE] !== ACCOUNT_TYPE_ACCOUNT) return null;
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  let cursor = ACCOUNT_SIZE + 1;
+  while (cursor + 4 <= data.length) {
+    const type = view.getUint16(cursor, true);
+    const len = view.getUint16(cursor + 2, true);
+    const start = cursor + 4;
+    if (start + len > data.length) throw new Error("malformed TLV: entry overruns the account");
+    if (type === EXTENSION_TYPE_RECEIVE_POLICY) {
+      if (len !== POLICY_LEN) {
+        throw new Error(`malformed ReceivePolicy: declared ${len} bytes, expected ${POLICY_LEN}`);
+      }
+      let o = start;
+      const minAmount = view.getBigUint64(o, true);
+      const sourceOwnerMode = data[o + 8];
+      const recoveryAuthorityMode = data[o + 9];
+      o += 16;
+      const recoveryAuthority = data.slice(o, o + 32);
+      o += 32;
+      const receiptBondLamports = view.getBigUint64(o, true);
+      const receiptTtlSlots = view.getBigUint64(o + 8, true);
+      const allowlistLen = data[o + 16];
+      o += 24;
+      const allowlist: Uint8Array[] = [];
+      for (let i = 0; i < Math.min(allowlistLen, 8); i++) {
+        allowlist.push(data.slice(o + i * 32, o + i * 32 + 32));
+      }
+      return {
+        minAmount,
+        sourceOwnerMode,
+        recoveryAuthorityMode,
+        recoveryAuthority,
+        receiptBondLamports,
+        receiptTtlSlots,
+        allowlist,
+      };
+    }
+    if (type === 0) return null;
+    cursor = start + len;
+  }
+  return null;
+}
+
+/** `true` only when the account genuinely carries a policy; throws on a malformed one. */
+export function hasReceivePolicy(data: Uint8Array): boolean {
+  return decodeReceivePolicy(data) !== null;
+}
+
+/**
+ * Would this policy accept `amount` from `sourceOwner`, and would a hold meet `limits`?
+ *
+ * Lets a sender decide before paying instead of discovering it from a failed transaction or,
+ * worse, a successful one that held the funds.
+ */
+export function previewOutcome(params: {
+  policy: ReceivePolicy | null;
+  amount: bigint | number;
+  sourceOwner: Uint8Array;
+  limits: HeldLimits;
+}): "credited" | "held" | "rejected-by-sender-limits" {
+  const { policy } = params;
+  if (!policy) return "credited";
+  const amount = BigInt(params.amount);
+  const sameKey = (a: Uint8Array, b: Uint8Array) =>
+    a.length === b.length && a.every((x, i) => x === b[i]);
+  const accepts =
+    amount >= policy.minAmount &&
+    (policy.sourceOwnerMode === 0 ||
+      policy.allowlist.some((k) => sameKey(k, params.sourceOwner)));
+  if (accepts) return "credited";
+  if (
+    policy.receiptBondLamports > BigInt(params.limits.maxBondLamports) ||
+    policy.receiptTtlSlots > BigInt(params.limits.maxTtlSlots) ||
+    policy.recoveryAuthorityMode > params.limits.maxRecoveryMode
+  ) {
+    return "rejected-by-sender-limits";
+  }
+  return "held";
+}
+
 export type AccountRole = {
   address: string;
   isSigner: boolean;

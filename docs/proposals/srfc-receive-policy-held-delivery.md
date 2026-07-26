@@ -83,11 +83,11 @@ Every path that derives a PDA varies by several thousand CU run to run, because 
 | Path | Accounts | CU (LiteSVM, range) | Ceiling |
 | --- | --- | --- | --- |
 | No-policy transfer | 4 | 2.9k | 10_000 |
-| Policy credited | 9 | 7.2k - 14.7k | 40_000 |
-| Policy held | 9 | 12.5k - 23.0k | 50_000 |
+| Policy credited | 9 | 7.2k - 16.2k | 40_000 |
+| Policy held | 9 | 12.7k - 21.7k | 50_000 |
 | Missing metas | 4 (incomplete) | 2.3k | 10_000 |
-| Claim held dust | 7 | 8.2k - 18.7k | 40_000 |
-| Close expired | 6 | 8.1k - 14.1k | 40_000 |
+| Claim held dust | 7 | 8.2k - 21.7k | 40_000 |
+| Close expired | 6 | 9.6k - 14.1k | 40_000 |
 
 Serialized policy-transfer tx ≈ **557B** (&lt; 1232). Contention: distinct receivers do not share a writable guard; same `(receiver, mint)` serializes. Mollusk not integrated on this toolchain.
 

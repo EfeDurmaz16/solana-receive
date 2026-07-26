@@ -99,3 +99,59 @@ fn tag_only_instructions_are_single_bytes() {
     assert_eq!(ReceiveTokenInstruction::ClaimReceipt.pack(), vec![5]);
     assert_eq!(ReceiveTokenInstruction::CloseExpiredReceipt.pack(), vec![6]);
 }
+
+/// Account-layout vector for the destination policy.
+///
+/// The JS client decodes this same byte layout in `clients/js/src/index.test.ts` so a sender can
+/// read a destination's terms before paying. Two independent readers of one on-chain layout: if
+/// either drifts, one of the two suites fails instead of a client silently misreading a policy.
+#[test]
+fn receive_policy_account_layout_vector() {
+    use solana_program::pubkey::Pubkey;
+    use token_2022_receive::extension::receive_policy::{ReceivePolicy, SourceOwnerMode};
+    use token_2022_receive::extension::tlv::{
+        account_len_with_receive_policy, write_receive_policy_tlv,
+    };
+
+    let mut policy = ReceivePolicy {
+        min_amount: 100,
+        source_owner_mode: SourceOwnerMode::Allowlist as u8,
+        recovery_authority_mode: 1,
+        _padding: [0; 6],
+        recovery_authority: Pubkey::new_from_array([0xab; 32]),
+        receipt_bond_lamports: 7,
+        receipt_ttl_slots: 1_512_000,
+        allowlist_len: 1,
+        _padding2: [0; 7],
+        allowlist: [Pubkey::default(); 8],
+    };
+    policy.allowlist[0] = Pubkey::new_from_array([0x11; 32]);
+
+    let mut data = vec![0u8; account_len_with_receive_policy()];
+    write_receive_policy_tlv(&mut data, &policy).unwrap();
+    assert_eq!(
+        data.len(),
+        498,
+        "165 base + type byte + 4 TLV header + 328 policy"
+    );
+
+    // Everything a reader needs to locate: type byte, TLV header, then each field in order.
+    assert_eq!(
+        hex(&data[165..234]),
+        format!(
+            "{}{}{}{}{}{}{}{}{}{}",
+            "02",               // ACCOUNT_TYPE_ACCOUNT at offset 165
+            "1027",             // extension type 10_000, little endian
+            "4801",             // declared length 328
+            "6400000000000000", // min_amount
+            "01",               // source_owner_mode = Allowlist
+            "01",               // recovery_authority_mode = Receiver
+            "000000000000",     // padding
+            "ab".repeat(32),    // recovery_authority
+            "0700000000000000", // receipt_bond_lamports
+            "4012170000000000", // receipt_ttl_slots
+        )
+    );
+    assert_eq!(data[234], 1, "allowlist_len");
+    assert_eq!(&data[242..274], &[0x11u8; 32], "allowlist[0]");
+}

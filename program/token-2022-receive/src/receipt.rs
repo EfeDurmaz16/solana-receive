@@ -25,7 +25,9 @@ pub struct Receipt {
     pub receiver_owner: Pubkey,
     pub recovery_authority_mode: u8,
     pub status: u8,
-    pub _padding: [u8; 6],
+    /// Layout version, taken from the existing padding so the account size is unchanged.
+    pub version: u8,
+    pub _padding: [u8; 5],
     pub recovery_authority: Pubkey,
     pub created_slot: u64,
     pub expires_slot: u64,
@@ -35,6 +37,7 @@ pub struct Receipt {
 }
 
 pub const RECEIPT_DISCRIMINATOR: u64 = 0x5245_4356_5243_5054; // "RECVRCPT"
+pub const RECEIPT_VERSION: u8 = 1;
 pub const RECEIPT_SIZE: usize = core::mem::size_of::<Receipt>();
 
 pub fn receipt_seeds<'a>(

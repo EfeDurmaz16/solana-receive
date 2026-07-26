@@ -9,6 +9,7 @@ use crate::guard::{
 use crate::processor::require_signer;
 use crate::receipt::{
     assert_receipt_pda, Receipt, ReceiptStatus, RECEIPT_DISCRIMINATOR, RECEIPT_SIZE,
+    RECEIPT_VERSION,
 };
 use bytemuck::{from_bytes, from_bytes_mut};
 use solana_program::{
@@ -32,6 +33,9 @@ fn load_open_receipt(
         return Err(ReceiveTokenError::InvalidReceipt.into());
     }
     let receipt = *from_bytes::<Receipt>(&data[..RECEIPT_SIZE]);
+    if receipt.version != RECEIPT_VERSION {
+        return Err(ReceiveTokenError::UnsupportedStateVersion.into());
+    }
     if receipt.discriminator != RECEIPT_DISCRIMINATOR || !receipt.is_open() {
         return Err(ReceiveTokenError::InvalidReceipt.into());
     }

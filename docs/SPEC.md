@@ -65,6 +65,7 @@ init rather than decoded permissively at transfer time.
 | Zero-amount held transfer | `failed` (would burn a shard slot while moving nothing) |
 | `Approve` / `Revoke` | Not implemented in v0; `delegate` is always unset |
 | `CloseAccount` | Not implemented; `close_authority` on a guard is a shard marker, not an authority |
+| `InitializeMint2` signer | None, matching SPL. Clients MUST create and initialize a mint in one transaction, or another party can initialize it first with their own authority |
 
 `receipt_bond_lamports` and `receipt_ttl_slots` are chosen by the **receiver** but paid for by
 the **sender** - the bond is debited from `bond_payer` and the TTL decides how long a rejected
@@ -94,7 +95,9 @@ Policy accepts → amount credited to destination. No receipt. Instruction succe
 Policy rejects an otherwise token-valid transfer → amount routes **source → guard**; receipt created; destination unchanged; instruction `Ok`.
 
 Because `held` succeeds, the instruction reports the outcome two ways: a `msg!` log line, and
-one byte of **return data** (`0` credited, `1` held). A caller that checks only whether the
+one byte of **return data** (`0` credited, `1` held). On `held` the log also carries the receipt
+address, amount and `expires_slot`, so an off-chain consumer can attribute the hold and find the
+account to claim without scanning. A caller that checks only whether the
 transaction landed will read a held transfer as a delivered payment; integrators MUST read the
 outcome.
 
@@ -228,7 +231,8 @@ destination owner is hostile.
 | Risk | Status |
 | --- | --- |
 | A hostile destination can still *route* an ordinary transfer into held custody by setting an unsatisfiable policy. Recovery is guaranteed (claim or expiry, both bounded), but the sender's funds are delayed, and under `Receiver` / `ThirdParty` recovery the destination decides who claims. **Senders must read the outcome byte, not just transaction success.** | By design; bounded by the TTL cap |
-| A destination can still *route* a transfer into held custody by publishing an unsatisfiable policy. Senders that will not accept this should send with `HeldLimits::no_hold()`. | Mitigated, not removed |
+| A destination can still *route* a transfer into held custody by publishing an unsatisfiable policy. The policy is write-once, so a sender that reads it (`decodeReceivePolicy`, `previewOutcome` in the JS client) sees terms that cannot change, and declines with `HeldLimits::no_hold()`. A sender that reads nothing and passes `unlimited()` accepts whatever the destination wrote. | Mitigated; the remainder is an explicit sender choice |
+| Throughput under a real scheduler is unmeasured. The account-lock structure is asserted (distinct shards share no writable account, `cu_ceilings::distinct_shards_share_no_writable_account`), but LiteSVM does not model bank locks. | Structure verified, throughput not |
 
 ## 11. Proposal path
 

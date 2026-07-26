@@ -53,13 +53,13 @@ Same dust (`1`), same mint/source:
 | Case | Outcome | Dest | Guard | CU (range) | Ceiling |
 | --- | --- | --- | --- | --- | --- |
 | BEFORE - no policy | credited | `1` | n/a | **2909** | 10_000 |
-| AFTER - policy, dust | held | `0` | `1` | **12.5k - 23.0k** | 50_000 |
-| AFTER - policy accepts `150` | credited | `150` | `0` | **7.2k - 14.7k** | 40_000 |
+| AFTER - policy, dust | held | `0` | `1` | **12.7k - 21.7k** | 50_000 |
+| AFTER - policy accepts `150` | credited | `150` | `0` | **7.2k - 16.2k** | 40_000 |
 | AFTER - metas missing | failed `Custom(10)` | `0` | - | **2300** | 10_000 |
-| Claim held dust | claim to dest | claim `1` | `0` | **8.2k - 18.7k** | 40_000 |
-| Close expired | refund source ATA | - | `0` | **8.1k - 14.1k** | 40_000 |
+| Claim held dust | claim to dest | claim `1` | `0` | **8.2k - 21.7k** | 40_000 |
+| Close expired | refund source ATA | - | `0` | **9.6k - 14.1k** | 40_000 |
 
-Ranges are the min and max over six runs of the same binary, not across rebuilds. Every path that
+Ranges are the min and max over eight runs of the same binary, not across rebuilds. Every path that
 derives a PDA varies by several thousand CU run to run because `find_program_address` searches
 downward from bump 255 and the number of iterations depends on the keys involved, which the
 fixtures generate randomly. The two paths that derive no PDA (`no-policy`, `missing-metas`) are
@@ -103,6 +103,10 @@ Distinct `(receiver, mint)` shards use distinct writable guard PDAs (no shared g
 | Zero-amount hold rejected | `guard_custody` |
 | Non-canonical instruction encodings rejected | `smoke` |
 | Client/program wire agreement (incl. variable-length allowlist) | `wire_vectors` + `clients/js/src/index.test.ts` |
+| ReceivePolicy account layout, read identically by both languages | `wire_vectors` + `clients/js/src/index.test.ts` |
+| `GuardState` / `Receipt` layout versions | `smoke` |
+| Distinct shards share no writable account | `cu_ceilings` |
+| Sender can preview credited / held / refused before paying | `clients/js/src/index.test.ts` |
 | Foreign account extension rejected (SPEC section 9) | `smoke` |
 | Error discriminants pinned to their numeric codes | `smoke` |
 | Held requires an initialized guard_state; credited does not | `guard_custody` |
@@ -139,7 +143,7 @@ Use when exercising RPC / Kit demos. For program semantics + CU, LiteSVM is enou
 
 ## Gaps (not yet regression-gated)
 
-1. Scheduler-faithful multi-transaction contention (account-lock analysis only for now).
+1. Throughput under a real scheduler. The account-lock structure that decides contention is now
+   asserted (`cu_ceilings::distinct_shards_share_no_writable_account`), but LiteSVM does not model
+   bank locks, so no wall-clock claim is made.
 2. Surfpool + Kit client demo once the CLI is installed.
-3. `GuardState` has no version field, so the 112 to 120 byte layout change is not migratable.
-   Nothing is deployed, so this is a note for whoever deploys first, not an outstanding defect.

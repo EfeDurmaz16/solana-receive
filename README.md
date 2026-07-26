@@ -34,7 +34,8 @@ flowchart TD
 `held` **succeeds**. Senders and indexers must read the outcome, not just transaction success -
 otherwise a diverted payment reads as a delivered one. A sender that will not accept held
 delivery at all can send with `HeldLimits::no_hold()`, which turns a policy rejection into a
-plain failure. Held funds stay recoverable:
+plain failure, and `previewOutcome` in the JS client says which outcome a transfer will get
+before it is sent. Held funds stay recoverable:
 the guard's spending authority is a PDA, so the receiver cannot spend them, and recovery is
 by `ClaimReceipt` or permissionless `CloseExpiredReceipt` after the TTL. A guard is refused as
 a transfer or mint destination, since tokens reaching it outside the held path would carry no

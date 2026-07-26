@@ -13,6 +13,7 @@ use crate::instruction::HeldLimits;
 use crate::processor::{create_pda_account, require_signer};
 use crate::receipt::{
     assert_receipt_pda, Receipt, ReceiptStatus, RECEIPT_DISCRIMINATOR, RECEIPT_SIZE,
+    RECEIPT_VERSION,
 };
 use crate::state::unpack_mint;
 use bytemuck::{bytes_of, from_bytes_mut};
@@ -270,7 +271,8 @@ pub fn process_transfer_checked(
                 receiver_owner: dest_owner,
                 recovery_authority_mode: policy.recovery_mode()? as u8,
                 status: ReceiptStatus::Open as u8,
-                _padding: [0; 6],
+                version: RECEIPT_VERSION,
+                _padding: [0; 5],
                 recovery_authority: policy.recovery_authority,
                 created_slot,
                 expires_slot,
@@ -289,7 +291,7 @@ pub fn process_transfer_checked(
             let gs = bytemuck::from_bytes::<GuardState>(&gs_data[..GUARD_STATE_SIZE]);
             assert_guard_backed(guard_token, gs)?;
         }
-        held()
+        held(receipt_info.key)
     }
 }
 
@@ -310,8 +312,16 @@ fn credited() -> ProgramResult {
     Ok(())
 }
 
-fn held() -> ProgramResult {
-    msg!("Outcome: held");
+/// Return data is one transaction-scoped slot the runtime clears at each instruction entry, so
+/// only a CPI caller reading it immediately can trust it. The log line is per instruction and
+/// survives, and it carries the receipt address so an off-chain consumer of a multi-instruction
+/// transaction can attribute the hold and find the account to claim without scanning.
+fn held(receipt: &Pubkey) -> ProgramResult {
+    msg!("Outcome: held receipt:");
+    // sol_log_pubkey, not `msg!("{receipt}")`: base58 formatting a Pubkey costs several thousand
+    // compute units, the syscall costs about a hundred. The receipt account itself carries the
+    // amount and expires_slot, so its address is the only thing the log has to provide.
+    receipt.log();
     set_return_data(&[TransferOutcome::Held as u8]);
     Ok(())
 }

@@ -360,3 +360,27 @@ fn a_mint_cannot_be_allocated_at_token_account_size() {
     // token account of that mint. Keeping the two disjoint by size is what prevents it.
     assert!(token_2022_receive::state::MINT_SIZE < token_2022_receive::state::ACCOUNT_SIZE);
 }
+
+#[test]
+fn state_layouts_are_versioned() {
+    // Without a version field a future layout change is only detectable as a length error, and a
+    // same-size change is not detectable at all: live accounts would be silently reinterpreted.
+    use token_2022_receive::guard::{GuardState, GUARD_STATE_VERSION};
+    use token_2022_receive::receipt::{Receipt, RECEIPT_SIZE, RECEIPT_VERSION};
+
+    let gs = GuardState::new(
+        Pubkey::new_unique(),
+        Pubkey::new_unique(),
+        Pubkey::new_unique(),
+    );
+    assert_eq!(gs.version, GUARD_STATE_VERSION);
+    assert_eq!(gs.held_amount, 0);
+
+    // Receipt takes its version byte from existing padding, so the account size is unchanged.
+    assert_eq!(RECEIPT_SIZE, 304);
+    let r = Receipt {
+        version: RECEIPT_VERSION,
+        ..bytemuck::Zeroable::zeroed()
+    };
+    assert_eq!(r.version, 1);
+}

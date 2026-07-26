@@ -62,6 +62,8 @@ pub enum ReceiveTokenError {
     TtlAboveSenderLimit = 30,
     #[error("Recovery mode gives away more custody than the sender allowed")]
     RecoveryModeAboveSenderLimit = 31,
+    #[error("Account layout version is not supported by this program")]
+    UnsupportedStateVersion = 32,
 }
 
 impl From<ReceiveTokenError> for ProgramError {

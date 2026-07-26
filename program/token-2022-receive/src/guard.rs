@@ -21,6 +21,11 @@ use solana_program::{
 #[derive(Clone, Copy, Debug, Default, PartialEq, Pod, Zeroable)]
 pub struct GuardState {
     pub discriminator: u64,
+    /// Layout version. Present so a future field can be added with a migration instead of
+    /// silently reinterpreting live shards: without it, a size change is only detectable as a
+    /// length error, and a same-size change is not detectable at all.
+    pub version: u8,
+    pub _padding: [u8; 7],
     pub receiver: Pubkey,
     pub mint: Pubkey,
     pub guard_token_account: Pubkey,
@@ -31,6 +36,7 @@ pub struct GuardState {
 }
 
 pub const GUARD_STATE_DISCRIMINATOR: u64 = 0x5245_4356_4755_4152; // "RECVGUAR"
+pub const GUARD_STATE_VERSION: u8 = 1;
 pub const GUARD_STATE_SIZE: usize = core::mem::size_of::<GuardState>();
 
 pub fn guard_token_seeds<'a>(receiver: &'a Pubkey, mint: &'a Pubkey) -> [&'a [u8]; 3] {
@@ -133,6 +139,9 @@ pub fn load_guard_state(
         return Err(ReceiveTokenError::InvalidAccountData.into());
     }
     let gs = bytemuck::from_bytes::<GuardState>(&data[..GUARD_STATE_SIZE]);
+    if gs.version != GUARD_STATE_VERSION {
+        return Err(ReceiveTokenError::UnsupportedStateVersion.into());
+    }
     if gs.discriminator != GUARD_STATE_DISCRIMINATOR
         || gs.receiver != *receiver
         || gs.mint != *mint
@@ -147,6 +156,8 @@ impl GuardState {
     pub fn new(receiver: Pubkey, mint: Pubkey, guard_token_account: Pubkey) -> Self {
         Self {
             discriminator: GUARD_STATE_DISCRIMINATOR,
+            version: GUARD_STATE_VERSION,
+            _padding: [0; 7],
             receiver,
             mint,
             guard_token_account,

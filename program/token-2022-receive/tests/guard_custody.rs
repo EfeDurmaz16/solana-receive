@@ -486,3 +486,55 @@ fn guard_state_accounts_for_every_held_token() {
     assert_eq!(gs.held_amount, 99, "and it is still backed");
     assert_eq!(token_amount(&fx.svm, &a.guard_token), 99);
 }
+
+#[test]
+fn held_log_carries_the_receipt_so_an_indexer_can_find_it() {
+    // Return data is a single transaction-scoped slot the runtime clears per instruction, so an
+    // off-chain reader of a multi-instruction transaction cannot attribute it. The log line is
+    // per instruction and must carry the receipt address, which is enough: the receipt account
+    // itself holds the amount and expires_slot.
+    let mut fx = Fixture::boot(1_000).with_policy_dest(100);
+    let (guard_token, _) =
+        derive_guard_token_address(&fx.dest_owner.pubkey(), &fx.mint.pubkey(), &fx.program_id);
+    let (guard_state, _) =
+        derive_guard_state_address(&fx.dest_owner.pubkey(), &fx.mint.pubkey(), &fx.program_id);
+    let nonce = [111u8; 32];
+    let (receipt, _) = derive_receipt_address(
+        &fx.dest_owner.pubkey(),
+        &fx.mint.pubkey(),
+        &fx.source_owner.pubkey(),
+        &nonce,
+        &fx.program_id,
+    );
+
+    let meta = send(
+        &mut fx.svm,
+        &fx.payer,
+        &[&fx.source_owner],
+        vec![transfer_checked(
+            &fx.program_id,
+            &fx.source.pubkey(),
+            &fx.mint.pubkey(),
+            &fx.dest.pubkey(),
+            &fx.source_owner.pubkey(),
+            99,
+            6,
+            nonce,
+            HeldLimits::unlimited(),
+            Some(PolicyTransferAccounts {
+                guard_token,
+                guard_state,
+                receipt,
+                bond_payer: fx.payer.pubkey(),
+            }),
+        )],
+    )
+    .expect("held transfer");
+
+    let logs = meta.logs.join("\n");
+    assert!(logs.contains("Outcome: held"), "logs: {logs}");
+    assert!(
+        logs.contains(&receipt.to_string()),
+        "the held log must name the receipt account: {logs}"
+    );
+}
